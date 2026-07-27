@@ -42,24 +42,33 @@ export default function HomePage() {
         }),
       });
 
+      if (!res.ok) {
+        throw new Error(
+          `Error del servidor: ${res.status}`
+        );
+      }
+
       const data = await res.json();
 
       setMessages([
         ...newMessages,
         {
           role: "assistant",
-          content: data.response || "Ha ocurrido un error.",
+          content:
+            data.response ||
+            "ThorAI no devolvió ninguna respuesta.",
         },
       ]);
 
     } catch (error) {
-      console.error(error);
+      console.error("ERROR DEL CHAT:", error);
 
       setMessages([
         ...newMessages,
         {
           role: "assistant",
-          content: "Error de conexión.",
+          content:
+            "Error: " + String(error),
         },
       ]);
     }
@@ -111,7 +120,9 @@ export default function HomePage() {
               style={{
                 marginBottom: "15px",
                 textAlign:
-                  msg.role === "user" ? "right" : "left",
+                  msg.role === "user"
+                    ? "right"
+                    : "left",
               }}
             >
               <span
@@ -137,9 +148,14 @@ export default function HomePage() {
 
         <textarea
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) =>
+            setText(e.target.value)
+          }
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey
+            ) {
               e.preventDefault();
               askAI();
             }
