@@ -2,33 +2,64 @@
 
 import { useState } from "react";
 
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export default function HomePage() {
   const [text, setText] = useState("");
-  const [response, setResponse] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
 
   async function askAI() {
     if (!text.trim()) return;
 
-    setResponse("Thor está pensando... ⚡");
+    const userMessage: Message = {
+      role: "user",
+      content: text,
+    };
+
+    const newMessages = [...messages, userMessage];
+
+    setMessages(newMessages);
+    setText("");
+
+    setMessages([
+      ...newMessages,
+      {
+        role: "assistant",
+        content: "Thor está pensando... ⚡",
+      },
+    ]);
 
     try {
-      const res = await fetch("/api/translate", {
+      const res = await fetch("/api-translate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({
+          messages: newMessages,
+        }),
       });
 
       const data = await res.json();
 
-      if (data.response) {
-        setResponse(data.response);
-      } else {
-        setResponse("Ha ocurrido un error.");
-      }
+      setMessages([
+        ...newMessages,
+        {
+          role: "assistant",
+          content: data.response || "Ha ocurrido un error.",
+        },
+      ]);
     } catch {
-      setResponse("Error de conexión.");
+      setMessages([
+        ...newMessages,
+        {
+          role: "assistant",
+          content: "Error de conexión.",
+        },
+      ]);
     }
   }
 
@@ -39,16 +70,18 @@ export default function HomePage() {
         background: "#0f172a",
         display: "flex",
         justifyContent: "center",
-        alignItems: "center",
+        padding: "40px",
       }}
     >
       <div
         style={{
           width: "800px",
           background: "#1e293b",
-          padding: "40px",
           borderRadius: "20px",
-          boxShadow: "0 0 25px rgba(0,0,0,0.4)",
+          padding: "30px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "20px",
         }}
       >
         <h1
@@ -56,33 +89,65 @@ export default function HomePage() {
             color: "white",
             textAlign: "center",
             fontSize: "48px",
-            marginBottom: "10px",
           }}
         >
           ⚡ ThorAI
         </h1>
 
-        <p
+        <div
           style={{
-            color: "#94a3b8",
-            textAlign: "center",
-            fontSize: "20px",
-            marginBottom: "25px",
+            height: "500px",
+            overflowY: "auto",
+            padding: "15px",
+            background: "#0f172a",
+            borderRadius: "15px",
           }}
         >
-          Tu asistente virtual inteligente
-        </p>
+          {messages.map((msg, index) => (
+            <div
+              key={index}
+              style={{
+                marginBottom: "15px",
+                textAlign:
+                  msg.role === "user" ? "right" : "left",
+              }}
+            >
+              <span
+                style={{
+                  display: "inline-block",
+                  padding: "15px",
+                  borderRadius: "15px",
+                  background:
+                    msg.role === "user"
+                      ? "#2563eb"
+                      : "#334155",
+                  color: "white",
+                  maxWidth: "80%",
+                  fontSize: "18px",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {msg.content}
+              </span>
+            </div>
+          ))}
+        </div>
 
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Pregúntame cualquier cosa..."
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              askAI();
+            }
+          }}
+          placeholder="Escribe un mensaje..."
           style={{
-            width: "100%",
-            height: "180px",
-            padding: "20px",
-            fontSize: "22px",
+            height: "100px",
+            padding: "15px",
             borderRadius: "10px",
+            fontSize: "20px",
             resize: "none",
           }}
         />
@@ -90,35 +155,17 @@ export default function HomePage() {
         <button
           onClick={askAI}
           style={{
-            width: "100%",
-            marginTop: "20px",
-            padding: "18px",
-            fontSize: "24px",
-            cursor: "pointer",
+            padding: "15px",
             borderRadius: "10px",
             border: "none",
             background: "#2563eb",
             color: "white",
-            fontWeight: "bold",
-          }}
-        >
-          Preguntar a Thor ⚡
-        </button>
-
-        <div
-          style={{
-            marginTop: "30px",
-            background: "#334155",
-            padding: "20px",
-            borderRadius: "10px",
-            minHeight: "150px",
-            color: "white",
             fontSize: "22px",
-            whiteSpace: "pre-wrap",
+            cursor: "pointer",
           }}
         >
-          {response}
-        </div>
+          Enviar ⚡
+        </button>
       </div>
     </main>
   );
