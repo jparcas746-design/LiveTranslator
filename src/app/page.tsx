@@ -28,6 +28,21 @@ export default function HomePage() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
 
+  const languages = [
+    { name: "Español", code: "es-ES" },
+    { name: "English", code: "en-US" },
+    { name: "Français", code: "fr-FR" },
+    { name: "Deutsch", code: "de-DE" },
+    { name: "Italiano", code: "it-IT" },
+    { name: "Português", code: "pt-PT" },
+    { name: "日本語", code: "ja-JP" },
+    { name: "한국어", code: "ko-KR" },
+    { name: "中文", code: "zh-CN" },
+    { name: "Nederlands", code: "nl-NL" },
+    { name: "Svenska", code: "sv-SE" },
+    { name: "Русский", code: "ru-RU" },
+  ];
+
   function startListening() {
     const SpeechRecognition =
       window.SpeechRecognition ||
@@ -567,18 +582,11 @@ export default function HomePage() {
                   style={{ display: "block", marginTop: "6px", padding: "8px", borderRadius: "8px" }}
                 >
                   <option value="auto">Auto Detect</option>
-                  <option value="es-ES">Spanish (Español)</option>
-                  <option value="en-US">English</option>
-                  <option value="fr-FR">French (Français)</option>
-                  <option value="de-DE">German (Deutsch)</option>
-                  <option value="it-IT">Italian (Italiano)</option>
-                  <option value="pt-PT">Portuguese (Português)</option>
-                  <option value="ja-JP">Japanese (日本語)</option>
-                  <option value="ko-KR">Korean (한국어)</option>
-                  <option value="zh-CN">Chinese (中文)</option>
-                  <option value="nl-NL">Dutch (Nederlands)</option>
-                  <option value="sv-SE">Swedish (Svenska)</option>
-                  <option value="ru-RU">Russian (Русский)</option>
+                  {languages.map((language) => (
+                    <option key={language.code} value={language.code}>
+                      {language.name}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
@@ -588,18 +596,11 @@ export default function HomePage() {
                   onChange={(e) => setTargetLanguage(e.target.value)}
                   style={{ display: "block", marginTop: "6px", padding: "8px", borderRadius: "8px" }}
                 >
-                  <option value="en-US">English</option>
-                  <option value="es-ES">Spanish (Español)</option>
-                  <option value="fr-FR">French (Français)</option>
-                  <option value="de-DE">German (Deutsch)</option>
-                  <option value="it-IT">Italian (Italiano)</option>
-                  <option value="pt-PT">Portuguese (Português)</option>
-                  <option value="ja-JP">Japanese (日本語)</option>
-                  <option value="ko-KR">Korean (한국어)</option>
-                  <option value="zh-CN">Chinese (中文)</option>
-                  <option value="nl-NL">Dutch (Nederlands)</option>
-                  <option value="sv-SE">Swedish (Svenska)</option>
-                  <option value="ru-RU">Russian (Русский)</option>
+                  {languages.map((language) => (
+                    <option key={language.code} value={language.code}>
+                      {language.name}
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>
