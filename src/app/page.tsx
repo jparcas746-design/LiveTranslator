@@ -32,7 +32,7 @@ export default function HomePage() {
 
     const recognition = new SpeechRecognition();
 
-    recognition.lang = "es-ES";
+    recognition.lang = navigator.language || "es-ES";
     recognition.continuous = false;
     recognition.interimResults = false;
 
@@ -41,6 +41,10 @@ export default function HomePage() {
     };
 
     recognition.onend = () => {
+      setListening(false);
+    };
+
+    recognition.onerror = () => {
       setListening(false);
     };
 
@@ -108,8 +112,7 @@ export default function HomePage() {
         ...newMessages,
         {
           role: "assistant",
-          content:
-            "Error: " + String(error),
+          content: "Error: " + String(error),
         },
       ]);
     }
