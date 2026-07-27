@@ -32,7 +32,7 @@ export default function HomePage() {
 
     const recognition = new SpeechRecognition();
 
-    recognition.lang = navigator.language || "es-ES";
+    recognition.lang = "en-US";
     recognition.continuous = false;
     recognition.interimResults = false;
 
@@ -52,12 +52,12 @@ export default function HomePage() {
       const transcript =
         event.results[0][0].transcript;
 
-      // Voz: manda directamente y activa respuesta hablada
       askAI(transcript, true);
     };
 
     recognition.start();
   }
+
 
   function speak(text: string) {
     if (!window.speechSynthesis) return;
@@ -67,15 +67,36 @@ export default function HomePage() {
     const utterance =
       new SpeechSynthesisUtterance(text);
 
-    utterance.lang =
-      navigator.language || "es-ES";
+    const voices =
+      window.speechSynthesis.getVoices();
+
+    let language = "es-ES";
+
+    if (/[\u0000-\u007F]/.test(text)) {
+      language = "en-US";
+    }
+
+    if (/[¿¡áéíóúñ]/i.test(text)) {
+      language = "es-ES";
+    }
+
+    utterance.lang = language;
+
+    const matchingVoice = voices.find(
+      (voice) =>
+        voice.lang.startsWith(language.split("-")[0])
+    );
+
+    if (matchingVoice) {
+      utterance.voice = matchingVoice;
+    }
 
     utterance.rate = 1;
     utterance.pitch = 1;
-    utterance.volume = 1;
 
     window.speechSynthesis.speak(utterance);
   }
+
 
   async function askAI(
     messageText?: string,
@@ -116,17 +137,11 @@ export default function HomePage() {
         }),
       });
 
-      if (!res.ok) {
-        throw new Error(
-          `Error del servidor: ${res.status}`
-        );
-      }
-
       const data = await res.json();
 
       const aiResponse =
         data.response ||
-        "ThorAI no devolvió respuesta.";
+        "ThorAI no respondió.";
 
       setMessages([
         ...newMessages,
@@ -136,7 +151,6 @@ export default function HomePage() {
         },
       ]);
 
-      // Solo habla cuando viene del micrófono
       if (fromVoice) {
         speak(aiResponse);
       }
@@ -169,9 +183,6 @@ export default function HomePage() {
           background: "#1e293b",
           borderRadius: "20px",
           padding: "30px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "20px",
         }}
       >
         <h1
@@ -206,17 +217,15 @@ export default function HomePage() {
             >
               <span
                 style={{
-                  display: "inline-block",
-                  padding: "15px",
-                  borderRadius: "15px",
                   background:
                     msg.role === "user"
                       ? "#2563eb"
                       : "#334155",
                   color: "white",
+                  padding: "15px",
+                  borderRadius: "15px",
+                  display: "inline-block",
                   maxWidth: "80%",
-                  fontSize: "18px",
-                  whiteSpace: "pre-wrap",
                 }}
               >
                 {msg.role === "assistant" ? (
@@ -249,44 +258,15 @@ export default function HomePage() {
           style={{
             width: "100%",
             height: "100px",
-            padding: "15px",
-            borderRadius: "10px",
-            fontSize: "20px",
-            resize: "none",
+            marginTop: "20px",
           }}
         />
 
-        <button
-          onClick={startListening}
-          style={{
-            padding: "15px",
-            borderRadius: "10px",
-            border: "none",
-            background: listening
-              ? "#dc2626"
-              : "#16a34a",
-            color: "white",
-            fontSize: "22px",
-            cursor: "pointer",
-          }}
-        >
-          {listening
-            ? "🎙️ Escuchando..."
-            : "🎤 Hablar"}
+        <button onClick={startListening}>
+          🎤 Hablar
         </button>
 
-        <button
-          onClick={() => askAI(undefined, false)}
-          style={{
-            padding: "15px",
-            borderRadius: "10px",
-            border: "none",
-            background: "#2563eb",
-            color: "white",
-            fontSize: "22px",
-            cursor: "pointer",
-          }}
-        >
+        <button onClick={() => askAI(undefined, false)}>
           Enviar ⚡
         </button>
       </div>
