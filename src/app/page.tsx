@@ -20,147 +20,101 @@ export default function HomePage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [listening, setListening] = useState(false);
 
-
   function startListening() {
     const SpeechRecognition =
       window.SpeechRecognition ||
       window.webkitSpeechRecognition;
-
 
     if (!SpeechRecognition) {
       alert("Tu navegador no soporta reconocimiento de voz");
       return;
     }
 
-
     const recognition = new SpeechRecognition();
 
-    recognition.lang =
-      navigator.language || "es-ES";
-
+    recognition.lang = navigator.language || "es-ES";
     recognition.continuous = false;
     recognition.interimResults = false;
-
 
     recognition.onstart = () => {
       setListening(true);
     };
 
-
     recognition.onend = () => {
       setListening(false);
     };
-
 
     recognition.onerror = () => {
       setListening(false);
     };
 
-
     recognition.onresult = (event: any) => {
-
       const transcript =
         event.results[0][0].transcript;
 
-
-      // La voz entra directamente al chat
+      // Voz: manda directamente y activa respuesta hablada
       askAI(transcript, true);
-
     };
-
 
     recognition.start();
   }
 
-
-
   function speak(text: string) {
-
     if (!window.speechSynthesis) return;
 
-
     window.speechSynthesis.cancel();
-
 
     const utterance =
       new SpeechSynthesisUtterance(text);
 
-
     utterance.lang =
       navigator.language || "es-ES";
-
 
     utterance.rate = 1;
     utterance.pitch = 1;
     utterance.volume = 1;
 
-
-    window.speechSynthesis.speak(
-      utterance
-    );
+    window.speechSynthesis.speak(utterance);
   }
-
-
 
   async function askAI(
     messageText?: string,
     fromVoice = false
   ) {
-
-    const finalText =
-      messageText || text;
-
+    const finalText = messageText || text;
 
     if (!finalText.trim()) return;
-
-
 
     const userMessage: Message = {
       role: "user",
       content: finalText,
     };
 
-
-
     const newMessages = [
       ...messages,
       userMessage,
     ];
 
-
-
     setMessages([
       ...newMessages,
       {
         role: "assistant",
-        content:
-          "Thor está pensando... ⚡",
+        content: "Thor está pensando... ⚡",
       },
     ]);
 
-
-
     setText("");
 
-
-
     try {
-
-      const res = await fetch(
-        "/api/translate",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            text: finalText,
-          }),
-        }
-      );
-
-
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: finalText,
+        }),
+      });
 
       if (!res.ok) {
         throw new Error(
@@ -168,17 +122,11 @@ export default function HomePage() {
         );
       }
 
-
-
       const data = await res.json();
-
-
 
       const aiResponse =
         data.response ||
-        "ThorAI no respondió.";
-
-
+        "ThorAI no devolvió respuesta.";
 
       setMessages([
         ...newMessages,
@@ -188,32 +136,22 @@ export default function HomePage() {
         },
       ]);
 
-
-
-      // Solo habla si vino del micrófono
+      // Solo habla cuando viene del micrófono
       if (fromVoice) {
         speak(aiResponse);
       }
 
-
-
     } catch (error) {
-
-
       setMessages([
         ...newMessages,
         {
           role: "assistant",
           content:
-            "Error: " +
-            String(error),
+            "Error: " + String(error),
         },
       ]);
-
     }
   }
-
-
 
   return (
     <main
@@ -225,16 +163,17 @@ export default function HomePage() {
         padding: "40px",
       }}
     >
-
       <div
         style={{
           width: "800px",
           background: "#1e293b",
           borderRadius: "20px",
           padding: "30px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "20px",
         }}
       >
-
         <h1
           style={{
             color: "white",
@@ -245,130 +184,112 @@ export default function HomePage() {
           ⚡ ThorAI
         </h1>
 
-
         <div
           style={{
             height: "500px",
             overflowY: "auto",
+            padding: "15px",
             background: "#0f172a",
-            padding: "20px",
             borderRadius: "15px",
           }}
         >
-
-          {messages.map((msg,index)=>(
+          {messages.map((msg, index) => (
             <div
               key={index}
               style={{
-                marginBottom:"15px",
+                marginBottom: "15px",
                 textAlign:
-                  msg.role==="user"
-                  ? "right"
-                  : "left",
+                  msg.role === "user"
+                    ? "right"
+                    : "left",
               }}
             >
-
               <span
                 style={{
-                  display:"inline-block",
-                  padding:"15px",
-                  borderRadius:"15px",
+                  display: "inline-block",
+                  padding: "15px",
+                  borderRadius: "15px",
                   background:
-                    msg.role==="user"
-                    ? "#2563eb"
-                    : "#334155",
-                  color:"white",
-                  maxWidth:"80%",
+                    msg.role === "user"
+                      ? "#2563eb"
+                      : "#334155",
+                  color: "white",
+                  maxWidth: "80%",
+                  fontSize: "18px",
+                  whiteSpace: "pre-wrap",
                 }}
               >
-
-                {msg.role==="assistant" ? (
+                {msg.role === "assistant" ? (
                   <ReactMarkdown>
                     {msg.content}
                   </ReactMarkdown>
                 ) : (
                   msg.content
                 )}
-
               </span>
-
             </div>
           ))}
-
         </div>
-
-
 
         <textarea
           value={text}
-          onChange={(e)=>setText(e.target.value)}
-          onKeyDown={(e)=>{
-
-            if(
-              e.key==="Enter" &&
+          onChange={(e) =>
+            setText(e.target.value)
+          }
+          onKeyDown={(e) => {
+            if (
+              e.key === "Enter" &&
               !e.shiftKey
-            ){
+            ) {
               e.preventDefault();
-              askAI(undefined,false);
+              askAI(undefined, false);
             }
-
           }}
           placeholder="Escribe un mensaje..."
           style={{
-            width:"100%",
-            height:"100px",
-            marginTop:"20px",
-            padding:"15px",
-            borderRadius:"10px",
-            fontSize:"20px",
-            resize:"none",
+            width: "100%",
+            height: "100px",
+            padding: "15px",
+            borderRadius: "10px",
+            fontSize: "20px",
+            resize: "none",
           }}
         />
-
-
 
         <button
           onClick={startListening}
           style={{
-            width:"100%",
-            marginTop:"15px",
-            padding:"15px",
-            borderRadius:"10px",
-            border:"none",
-            background:
-              listening
+            padding: "15px",
+            borderRadius: "10px",
+            border: "none",
+            background: listening
               ? "#dc2626"
               : "#16a34a",
-            color:"white",
-            fontSize:"22px",
+            color: "white",
+            fontSize: "22px",
+            cursor: "pointer",
           }}
         >
           {listening
-          ? "🎙️ Escuchando..."
-          : "🎤 Hablar"}
+            ? "🎙️ Escuchando..."
+            : "🎤 Hablar"}
         </button>
 
-
-
         <button
-          onClick={()=>askAI(undefined,false)}
+          onClick={() => askAI(undefined, false)}
           style={{
-            width:"100%",
-            marginTop:"15px",
-            padding:"15px",
-            borderRadius:"10px",
-            border:"none",
-            background:"#2563eb",
-            color:"white",
-            fontSize:"22px",
+            padding: "15px",
+            borderRadius: "10px",
+            border: "none",
+            background: "#2563eb",
+            color: "white",
+            fontSize: "22px",
+            cursor: "pointer",
           }}
         >
           Enviar ⚡
         </button>
-
-
       </div>
-
     </main>
   );
 }
