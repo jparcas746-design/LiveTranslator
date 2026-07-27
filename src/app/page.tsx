@@ -58,6 +58,23 @@ export default function HomePage() {
     recognition.start();
   }
 
+  function speak(text: string) {
+    if (!window.speechSynthesis) {
+      alert("Tu navegador no soporta voz");
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+
+    utterance.lang = navigator.language || "es-ES";
+    utterance.rate = 1;
+    utterance.pitch = 1;
+
+    window.speechSynthesis.speak(utterance);
+  }
+
   async function askAI() {
     if (!text.trim()) return;
 
@@ -66,7 +83,10 @@ export default function HomePage() {
       content: text,
     };
 
-    const newMessages = [...messages, userMessage];
+    const newMessages = [
+      ...messages,
+      userMessage,
+    ];
 
     setMessages([
       ...newMessages,
@@ -90,20 +110,26 @@ export default function HomePage() {
       });
 
       if (!res.ok) {
-        throw new Error(`Error del servidor: ${res.status}`);
+        throw new Error(
+          `Error del servidor: ${res.status}`
+        );
       }
 
       const data = await res.json();
+
+      const aiResponse =
+        data.response ||
+        "ThorAI no devolvió ninguna respuesta.";
 
       setMessages([
         ...newMessages,
         {
           role: "assistant",
-          content:
-            data.response ||
-            "ThorAI no devolvió ninguna respuesta.",
+          content: aiResponse,
         },
       ]);
+
+      speak(aiResponse);
 
     } catch (error) {
       console.error("ERROR DEL CHAT:", error);
@@ -112,7 +138,8 @@ export default function HomePage() {
         ...newMessages,
         {
           role: "assistant",
-          content: "Error: " + String(error),
+          content:
+            "Error: " + String(error),
         },
       ]);
     }
