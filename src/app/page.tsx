@@ -790,13 +790,12 @@ export default function HomePage() {
                 {translatedText || "Translation preview will appear here."}
               </div>
             </label>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-start" }}>
               <button
                 onClick={retranslatePrevious}
                 disabled={!lastTranslation}
                 title="Translate the previous text again with the current target language"
                 style={{
-                  alignSelf: "flex-start",
                   padding: "10px 14px",
                   borderRadius: "10px",
                   border: "1px solid #475569",
@@ -804,9 +803,11 @@ export default function HomePage() {
                   color: "white",
                   cursor: lastTranslation ? "pointer" : "not-allowed",
                   opacity: lastTranslation ? 1 : 0.7,
+                  fontSize: "15px",
+                  fontWeight: 600,
                 }}
               >
-                🔄 Translate again
+                🔄 Re-translate
               </button>
               {!lastTranslation && (
                 <div style={{ color: "#cbd5e1", fontSize: "13px" }}>
