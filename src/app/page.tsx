@@ -82,18 +82,22 @@ export default function HomePage() {
         return "fr-FR";
       case "de":
         return "de-DE";
-      case "ja":
-        return "ja-JP";
-      case "pt":
-        return "pt-BR";
       case "it":
         return "it-IT";
-      case "nl":
-        return "nl-NL";
-      case "ru":
-        return "ru-RU";
+      case "pt":
+        return "pt-BR";
+      case "ja":
+        return "ja-JP";
+      case "ko":
+        return "ko-KR";
       case "zh":
         return "zh-CN";
+      case "nl":
+        return "nl-NL";
+      case "sv":
+        return "sv-SE";
+      case "ru":
+        return "ru-RU";
       default:
         return language || navigator.language || "es-ES";
     }
@@ -104,34 +108,64 @@ export default function HomePage() {
     const normalized = (languageCode || "").toLowerCase();
     const baseLanguage = normalized.split("-")[0];
 
+    const languageProfiles: Record<string, { preferredCodes: string[]; fallbackCodes: string[] }> = {
+      "en": { preferredCodes: ["en-us", "en-gb", "en-au", "en-ca"], fallbackCodes: ["en"] },
+      "es": { preferredCodes: ["es-es", "es-mx", "es-us", "es"], fallbackCodes: ["es"] },
+      "fr": { preferredCodes: ["fr-fr", "fr-ca", "fr"], fallbackCodes: ["fr"] },
+      "de": { preferredCodes: ["de-de", "de"], fallbackCodes: ["de"] },
+      "it": { preferredCodes: ["it-it", "it"], fallbackCodes: ["it"] },
+      "pt": { preferredCodes: ["pt-br", "pt-pt", "pt"], fallbackCodes: ["pt"] },
+      "ja": { preferredCodes: ["ja-jp", "ja"], fallbackCodes: ["ja"] },
+      "ko": { preferredCodes: ["ko-kr", "ko"], fallbackCodes: ["ko"] },
+      "zh": { preferredCodes: ["zh-cn", "zh-hk", "zh-tw", "zh"], fallbackCodes: ["zh"] },
+      "nl": { preferredCodes: ["nl-nl", "nl"], fallbackCodes: ["nl"] },
+      "sv": { preferredCodes: ["sv-se", "sv"], fallbackCodes: ["sv"] },
+      "ru": { preferredCodes: ["ru-ru", "ru"], fallbackCodes: ["ru"] },
+    };
+
+    const profile = languageProfiles[baseLanguage] || {
+      preferredCodes: [normalized],
+      fallbackCodes: [baseLanguage],
+    };
+
     const rankedVoices = voices
       .map((voice: SpeechSynthesisVoice) => {
         const lang = voice.lang.toLowerCase();
-        const matchesExact = lang === normalized;
-        const matchesBase = lang.startsWith(baseLanguage + "-") || lang.startsWith(baseLanguage);
-        const isNatural = /natural|premium|female|male|neural|wave|universal/i.test(voice.name.toLowerCase());
-        const isGoogle = /google|siri|azure|amazon|polly|neural/i.test(voice.name.toLowerCase());
-        const isDefault = /default/i.test(voice.name.toLowerCase());
+        const name = voice.name.toLowerCase();
+        const matchesExact = profile.preferredCodes.some((code) => lang === code);
+        const matchesBase = profile.preferredCodes.some((code) => lang.startsWith(code)) || profile.fallbackCodes.some((code) => lang.startsWith(code));
+        const matchesLanguageFamily = lang.startsWith(baseLanguage + "-") || lang.startsWith(baseLanguage);
+        const isNatural = /natural|premium|neural|wave|universal|enhanced|female|male/i.test(name);
+        const isGoogle = /google|siri|azure|amazon|polly|neural/i.test(name);
+        const isDefault = /default/i.test(name);
+        const isPreferredName = profile.preferredCodes.some((code) => name.includes(code.replace("-", "")));
 
         let score = 0;
-        if (matchesExact) score += 100;
-        if (matchesBase) score += 40;
+        if (matchesExact) score += 120;
+        if (matchesBase) score += 80;
+        if (matchesLanguageFamily) score += 35;
         if (isGoogle) score += 20;
         if (isNatural) score += 15;
+        if (isPreferredName) score += 10;
         if (isDefault) score += 5;
 
         return { voice, score };
       })
       .sort((a, b) => b.score - a.score);
 
-    const preferredVoice = rankedVoices.find((entry) => entry.score >= 100);
+    const preferredVoice = rankedVoices.find((entry) => entry.score >= 120);
     if (preferredVoice) {
       return preferredVoice.voice;
     }
 
-    const fallbackVoice = rankedVoices.find((entry) => entry.score >= 40);
+    const fallbackVoice = rankedVoices.find((entry) => entry.score >= 80);
     if (fallbackVoice) {
       return fallbackVoice.voice;
+    }
+
+    const languageFamilyVoice = rankedVoices.find((entry) => entry.score >= 35);
+    if (languageFamilyVoice) {
+      return languageFamilyVoice.voice;
     }
 
     return rankedVoices[0]?.voice;
@@ -529,6 +563,15 @@ export default function HomePage() {
                   <option value="en">English</option>
                   <option value="es">Spanish</option>
                   <option value="fr">French</option>
+                  <option value="de">German</option>
+                  <option value="it">Italian</option>
+                  <option value="pt">Portuguese</option>
+                  <option value="ja">Japanese</option>
+                  <option value="ko">Korean</option>
+                  <option value="zh">Chinese</option>
+                  <option value="nl">Dutch</option>
+                  <option value="sv">Swedish</option>
+                  <option value="ru">Russian</option>
                 </select>
               </label>
             </div>
