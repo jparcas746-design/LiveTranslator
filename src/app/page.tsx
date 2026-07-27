@@ -3,6 +3,13 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 
+declare global {
+  interface Window {
+    SpeechRecognition: any;
+    webkitSpeechRecognition: any;
+  }
+}
+
 type Message = {
   role: "user" | "assistant";
   content: string;
@@ -11,6 +18,41 @@ type Message = {
 export default function HomePage() {
   const [text, setText] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [listening, setListening] = useState(false);
+
+  function startListening() {
+    const SpeechRecognition =
+      window.SpeechRecognition ||
+      window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert("Tu navegador no soporta reconocimiento de voz");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+
+    recognition.lang = "es-ES";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+      setListening(true);
+    };
+
+    recognition.onend = () => {
+      setListening(false);
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript =
+        event.results[0][0].transcript;
+
+      setText(transcript);
+    };
+
+    recognition.start();
+  }
 
   async function askAI() {
     if (!text.trim()) return;
@@ -66,7 +108,8 @@ export default function HomePage() {
         ...newMessages,
         {
           role: "assistant",
-          content: "Error: " + String(error),
+          content:
+            "Error: " + String(error),
         },
       ]);
     }
@@ -173,6 +216,25 @@ export default function HomePage() {
             resize: "none",
           }}
         />
+
+        <button
+          onClick={startListening}
+          style={{
+            padding: "15px",
+            borderRadius: "10px",
+            border: "none",
+            background: listening
+              ? "#dc2626"
+              : "#16a34a",
+            color: "white",
+            fontSize: "22px",
+            cursor: "pointer",
+          }}
+        >
+          {listening
+            ? "🎙️ Escuchando..."
+            : "🎤 Hablar"}
+        </button>
 
         <button
           onClick={askAI}
