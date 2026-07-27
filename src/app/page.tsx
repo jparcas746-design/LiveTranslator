@@ -24,7 +24,7 @@ export default function HomePage() {
   const [sourceText, setSourceText] = useState("");
   const [translatedText, setTranslatedText] = useState("");
   const [sourceLanguage, setSourceLanguage] = useState("auto");
-  const [targetLanguage, setTargetLanguage] = useState("en");
+  const [targetLanguage, setTargetLanguage] = useState("en-US");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
 
@@ -71,32 +71,50 @@ export default function HomePage() {
   }
 
   function getSpeechLanguageCode(language: string) {
-    const normalized = language?.toLowerCase();
+    const normalized = (language || "").toLowerCase();
 
     switch (normalized) {
       case "en":
+      case "en-us":
         return "en-US";
       case "es":
+      case "es-es":
+      case "es-mx":
         return "es-ES";
       case "fr":
+      case "fr-fr":
+      case "fr-ca":
         return "fr-FR";
       case "de":
+      case "de-de":
         return "de-DE";
       case "it":
+      case "it-it":
         return "it-IT";
       case "pt":
+      case "pt-pt":
+        return "pt-PT";
+      case "pt-br":
         return "pt-BR";
       case "ja":
+      case "ja-jp":
         return "ja-JP";
       case "ko":
+      case "ko-kr":
         return "ko-KR";
       case "zh":
+      case "zh-cn":
+      case "zh-hk":
+      case "zh-tw":
         return "zh-CN";
       case "nl":
+      case "nl-nl":
         return "nl-NL";
       case "sv":
+      case "sv-se":
         return "sv-SE";
       case "ru":
+      case "ru-ru":
         return "ru-RU";
       default:
         return language || navigator.language || "es-ES";
@@ -549,8 +567,18 @@ export default function HomePage() {
                   style={{ display: "block", marginTop: "6px", padding: "8px", borderRadius: "8px" }}
                 >
                   <option value="auto">Auto Detect</option>
-                  <option value="en">English</option>
-                  <option value="es">Spanish</option>
+                  <option value="es-ES">Spanish (Español)</option>
+                  <option value="en-US">English</option>
+                  <option value="fr-FR">French (Français)</option>
+                  <option value="de-DE">German (Deutsch)</option>
+                  <option value="it-IT">Italian (Italiano)</option>
+                  <option value="pt-PT">Portuguese (Português)</option>
+                  <option value="ja-JP">Japanese (日本語)</option>
+                  <option value="ko-KR">Korean (한국어)</option>
+                  <option value="zh-CN">Chinese (中文)</option>
+                  <option value="nl-NL">Dutch (Nederlands)</option>
+                  <option value="sv-SE">Swedish (Svenska)</option>
+                  <option value="ru-RU">Russian (Русский)</option>
                 </select>
               </label>
               <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
@@ -560,18 +588,18 @@ export default function HomePage() {
                   onChange={(e) => setTargetLanguage(e.target.value)}
                   style={{ display: "block", marginTop: "6px", padding: "8px", borderRadius: "8px" }}
                 >
-                  <option value="en">English</option>
-                  <option value="es">Spanish</option>
-                  <option value="fr">French</option>
-                  <option value="de">German</option>
-                  <option value="it">Italian</option>
-                  <option value="pt">Portuguese</option>
-                  <option value="ja">Japanese</option>
-                  <option value="ko">Korean</option>
-                  <option value="zh">Chinese</option>
-                  <option value="nl">Dutch</option>
-                  <option value="sv">Swedish</option>
-                  <option value="ru">Russian</option>
+                  <option value="en-US">English</option>
+                  <option value="es-ES">Spanish (Español)</option>
+                  <option value="fr-FR">French (Français)</option>
+                  <option value="de-DE">German (Deutsch)</option>
+                  <option value="it-IT">Italian (Italiano)</option>
+                  <option value="pt-PT">Portuguese (Português)</option>
+                  <option value="ja-JP">Japanese (日本語)</option>
+                  <option value="ko-KR">Korean (한국어)</option>
+                  <option value="zh-CN">Chinese (中文)</option>
+                  <option value="nl-NL">Dutch (Nederlands)</option>
+                  <option value="sv-SE">Swedish (Svenska)</option>
+                  <option value="ru-RU">Russian (Русский)</option>
                 </select>
               </label>
             </div>
