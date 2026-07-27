@@ -53,34 +53,41 @@ export default function HomePage() {
         event.results[0][0].transcript;
 
       setText(transcript);
+
+      setTimeout(() => {
+        askAI(transcript);
+      }, 300);
     };
 
     recognition.start();
   }
 
   function speak(text: string) {
-    if (!window.speechSynthesis) {
-      alert("Tu navegador no soporta voz");
-      return;
-    }
+    if (!window.speechSynthesis) return;
 
     window.speechSynthesis.cancel();
 
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance =
+      new SpeechSynthesisUtterance(text);
 
-    utterance.lang = navigator.language || "es-ES";
+    utterance.lang =
+      navigator.language || "es-ES";
+
     utterance.rate = 1;
     utterance.pitch = 1;
+    utterance.volume = 1;
 
     window.speechSynthesis.speak(utterance);
   }
 
-  async function askAI() {
-    if (!text.trim()) return;
+  async function askAI(messageText?: string) {
+    const finalText = messageText || text;
+
+    if (!finalText.trim()) return;
 
     const userMessage: Message = {
       role: "user",
-      content: text,
+      content: finalText,
     };
 
     const newMessages = [
@@ -105,7 +112,7 @@ export default function HomePage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          text: userMessage.content,
+          text: finalText,
         }),
       });
 
@@ -132,7 +139,7 @@ export default function HomePage() {
       speak(aiResponse);
 
     } catch (error) {
-      console.error("ERROR DEL CHAT:", error);
+      console.error(error);
 
       setMessages([
         ...newMessages,
@@ -228,15 +235,6 @@ export default function HomePage() {
           onChange={(e) =>
             setText(e.target.value)
           }
-          onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              !e.shiftKey
-            ) {
-              e.preventDefault();
-              askAI();
-            }
-          }}
           placeholder="Escribe un mensaje..."
           style={{
             height: "100px",
@@ -267,7 +265,7 @@ export default function HomePage() {
         </button>
 
         <button
-          onClick={askAI}
+          onClick={() => askAI()}
           style={{
             padding: "15px",
             borderRadius: "10px",
