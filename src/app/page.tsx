@@ -32,7 +32,7 @@ export default function HomePage() {
 
     const recognition = new SpeechRecognition();
 
-    recognition.lang = "en-US";
+    recognition.lang = navigator.language || "es-ES";
     recognition.continuous = false;
     recognition.interimResults = false;
 
@@ -52,6 +52,8 @@ export default function HomePage() {
       const transcript =
         event.results[0][0].transcript;
 
+      // Entrada por voz:
+      // manda directamente y activa voz de respuesta
       askAI(transcript, true);
     };
 
@@ -64,35 +66,50 @@ export default function HomePage() {
 
     window.speechSynthesis.cancel();
 
-    const utterance =
-      new SpeechSynthesisUtterance(text);
-
     const voices =
       window.speechSynthesis.getVoices();
 
-    let language = "es-ES";
+    const isEnglish =
+      /^[A-Za-z\s.,!?'"-]+$/.test(text) &&
+      !/[áéíóúñ¿¡]/i.test(text);
 
-    if (/[\u0000-\u007F]/.test(text)) {
-      language = "en-US";
+    const utterance =
+      new SpeechSynthesisUtterance(text);
+
+
+    if (isEnglish) {
+      utterance.lang = "en-US";
+
+      const englishVoice =
+        voices.find(
+          (voice) =>
+            voice.lang === "en-US" ||
+            voice.lang.startsWith("en")
+        );
+
+      if (englishVoice) {
+        utterance.voice = englishVoice;
+      }
+
+    } else {
+      utterance.lang = "es-ES";
+
+      const spanishVoice =
+        voices.find(
+          (voice) =>
+            voice.lang === "es-ES" ||
+            voice.lang.startsWith("es")
+        );
+
+      if (spanishVoice) {
+        utterance.voice = spanishVoice;
+      }
     }
 
-    if (/[¿¡áéíóúñ]/i.test(text)) {
-      language = "es-ES";
-    }
-
-    utterance.lang = language;
-
-    const matchingVoice = voices.find(
-      (voice) =>
-        voice.lang.startsWith(language.split("-")[0])
-    );
-
-    if (matchingVoice) {
-      utterance.voice = matchingVoice;
-    }
 
     utterance.rate = 1;
     utterance.pitch = 1;
+    utterance.volume = 1;
 
     window.speechSynthesis.speak(utterance);
   }
@@ -102,46 +119,66 @@ export default function HomePage() {
     messageText?: string,
     fromVoice = false
   ) {
-    const finalText = messageText || text;
+    const finalText =
+      messageText || text;
 
     if (!finalText.trim()) return;
+
 
     const userMessage: Message = {
       role: "user",
       content: finalText,
     };
 
+
     const newMessages = [
       ...messages,
       userMessage,
     ];
 
+
     setMessages([
       ...newMessages,
       {
         role: "assistant",
-        content: "Thor está pensando... ⚡",
+        content:
+          "Thor está pensando... ⚡",
       },
     ]);
 
+
     setText("");
 
+
     try {
-      const res = await fetch("/api/translate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text: finalText,
-        }),
-      });
+      const res = await fetch(
+        "/api/translate",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text: finalText,
+          }),
+        }
+      );
+
+
+      if (!res.ok) {
+        throw new Error(
+          `Error del servidor: ${res.status}`
+        );
+      }
+
 
       const data = await res.json();
 
+
       const aiResponse =
         data.response ||
-        "ThorAI no respondió.";
+        "ThorAI no devolvió respuesta.";
+
 
       setMessages([
         ...newMessages,
@@ -151,21 +188,28 @@ export default function HomePage() {
         },
       ]);
 
+
+      // Solo habla cuando la entrada fue por micrófono
       if (fromVoice) {
         speak(aiResponse);
       }
 
+
     } catch (error) {
+
       setMessages([
         ...newMessages,
         {
           role: "assistant",
           content:
-            "Error: " + String(error),
+            "Error: " +
+            String(error),
         },
       ]);
+
     }
   }
+
 
   return (
     <main
@@ -177,14 +221,19 @@ export default function HomePage() {
         padding: "40px",
       }}
     >
+
       <div
         style={{
           width: "800px",
           background: "#1e293b",
           borderRadius: "20px",
           padding: "30px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "20px",
         }}
       >
+
         <h1
           style={{
             color: "white",
@@ -195,6 +244,7 @@ export default function HomePage() {
           ⚡ ThorAI
         </h1>
 
+
         <div
           style={{
             height: "500px",
@@ -204,41 +254,55 @@ export default function HomePage() {
             borderRadius: "15px",
           }}
         >
-          {messages.map((msg, index) => (
-            <div
-              key={index}
-              style={{
-                marginBottom: "15px",
-                textAlign:
-                  msg.role === "user"
-                    ? "right"
-                    : "left",
-              }}
-            >
-              <span
+
+          {messages.map(
+            (msg, index) => (
+              <div
+                key={index}
                 style={{
-                  background:
+                  marginBottom: "15px",
+                  textAlign:
                     msg.role === "user"
-                      ? "#2563eb"
-                      : "#334155",
-                  color: "white",
-                  padding: "15px",
-                  borderRadius: "15px",
-                  display: "inline-block",
-                  maxWidth: "80%",
+                      ? "right"
+                      : "left",
                 }}
               >
-                {msg.role === "assistant" ? (
-                  <ReactMarkdown>
-                    {msg.content}
-                  </ReactMarkdown>
-                ) : (
-                  msg.content
-                )}
-              </span>
-            </div>
-          ))}
+
+                <span
+                  style={{
+                    display:
+                      "inline-block",
+                    padding: "15px",
+                    borderRadius:
+                      "15px",
+                    background:
+                      msg.role === "user"
+                        ? "#2563eb"
+                        : "#334155",
+                    color: "white",
+                    maxWidth: "80%",
+                    fontSize: "18px",
+                    whiteSpace:
+                      "pre-wrap",
+                  }}
+                >
+
+                  {msg.role === "assistant" ? (
+                    <ReactMarkdown>
+                      {msg.content}
+                    </ReactMarkdown>
+                  ) : (
+                    msg.content
+                  )}
+
+                </span>
+
+              </div>
+            )
+          )}
+
         </div>
+
 
         <textarea
           value={text}
@@ -251,6 +315,9 @@ export default function HomePage() {
               !e.shiftKey
             ) {
               e.preventDefault();
+
+              // Teclado:
+              // no activa voz
               askAI(undefined, false);
             }
           }}
@@ -258,18 +325,54 @@ export default function HomePage() {
           style={{
             width: "100%",
             height: "100px",
-            marginTop: "20px",
+            padding: "15px",
+            borderRadius: "10px",
+            fontSize: "20px",
+            resize: "none",
           }}
         />
 
-        <button onClick={startListening}>
-          🎤 Hablar
+
+        <button
+          onClick={startListening}
+          style={{
+            padding: "15px",
+            borderRadius: "10px",
+            border: "none",
+            background:
+              listening
+                ? "#dc2626"
+                : "#16a34a",
+            color: "white",
+            fontSize: "22px",
+            cursor: "pointer",
+          }}
+        >
+          {listening
+            ? "🎙️ Escuchando..."
+            : "🎤 Hablar"}
         </button>
 
-        <button onClick={() => askAI(undefined, false)}>
+
+        <button
+          onClick={() =>
+            askAI(undefined, false)
+          }
+          style={{
+            padding: "15px",
+            borderRadius: "10px",
+            border: "none",
+            background: "#2563eb",
+            color: "white",
+            fontSize: "22px",
+            cursor: "pointer",
+          }}
+        >
           Enviar ⚡
         </button>
+
       </div>
+
     </main>
   );
 }
