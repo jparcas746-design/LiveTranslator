@@ -52,8 +52,6 @@ export default function HomePage() {
       const transcript =
         event.results[0][0].transcript;
 
-      // Entrada por voz:
-      // manda directamente y activa voz de respuesta
       askAI(transcript, true);
     };
 
@@ -66,52 +64,67 @@ export default function HomePage() {
 
     window.speechSynthesis.cancel();
 
-    const voices =
-      window.speechSynthesis.getVoices();
+    const speakNow = () => {
+      const voices =
+        window.speechSynthesis.getVoices();
 
-    const isEnglish =
-      /^[A-Za-z\s.,!?'"-]+$/.test(text) &&
-      !/[áéíóúñ¿¡]/i.test(text);
+      const isEnglish =
+        !/[áéíóúñ¿¡]/i.test(text) &&
+        /[a-zA-Z]/.test(text);
 
-    const utterance =
-      new SpeechSynthesisUtterance(text);
+      const utterance =
+        new SpeechSynthesisUtterance(text);
 
+      let selectedVoice = null;
 
-    if (isEnglish) {
-      utterance.lang = "en-US";
+      if (isEnglish) {
+        utterance.lang = "en-US";
 
-      const englishVoice =
-        voices.find(
+        selectedVoice = voices.find(
           (voice) =>
             voice.lang === "en-US" ||
             voice.lang.startsWith("en")
         );
 
-      if (englishVoice) {
-        utterance.voice = englishVoice;
-      }
+      } else {
+        utterance.lang = "es-ES";
 
-    } else {
-      utterance.lang = "es-ES";
-
-      const spanishVoice =
-        voices.find(
+        selectedVoice = voices.find(
           (voice) =>
             voice.lang === "es-ES" ||
             voice.lang.startsWith("es")
         );
-
-      if (spanishVoice) {
-        utterance.voice = spanishVoice;
       }
+
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+        console.log(
+          "Voz usada:",
+          selectedVoice.name,
+          selectedVoice.lang
+        );
+      } else {
+        console.log(
+          "No se encontró una voz compatible"
+        );
+      }
+
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+
+      window.speechSynthesis.speak(utterance);
+    };
+
+
+    if (
+      window.speechSynthesis.getVoices().length === 0
+    ) {
+      window.speechSynthesis.onvoiceschanged =
+        speakNow;
+    } else {
+      speakNow();
     }
-
-
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    utterance.volume = 1;
-
-    window.speechSynthesis.speak(utterance);
   }
 
 
@@ -152,7 +165,7 @@ export default function HomePage() {
 
     try {
       const res = await fetch(
-        "/api/translate",
+        "/api-translate",
         {
           method: "POST",
           headers: {
@@ -189,7 +202,7 @@ export default function HomePage() {
       ]);
 
 
-      // Solo habla cuando la entrada fue por micrófono
+      // Solo habla cuando viene del micrófono
       if (fromVoice) {
         speak(aiResponse);
       }
@@ -206,7 +219,6 @@ export default function HomePage() {
             String(error),
         },
       ]);
-
     }
   }
 
@@ -255,51 +267,46 @@ export default function HomePage() {
           }}
         >
 
-          {messages.map(
-            (msg, index) => (
-              <div
-                key={index}
+          {messages.map((msg, index) => (
+            <div
+              key={index}
+              style={{
+                marginBottom: "15px",
+                textAlign:
+                  msg.role === "user"
+                    ? "right"
+                    : "left",
+              }}
+            >
+
+              <span
                 style={{
-                  marginBottom: "15px",
-                  textAlign:
+                  display: "inline-block",
+                  padding: "15px",
+                  borderRadius: "15px",
+                  background:
                     msg.role === "user"
-                      ? "right"
-                      : "left",
+                      ? "#2563eb"
+                      : "#334155",
+                  color: "white",
+                  maxWidth: "80%",
+                  fontSize: "18px",
+                  whiteSpace: "pre-wrap",
                 }}
               >
 
-                <span
-                  style={{
-                    display:
-                      "inline-block",
-                    padding: "15px",
-                    borderRadius:
-                      "15px",
-                    background:
-                      msg.role === "user"
-                        ? "#2563eb"
-                        : "#334155",
-                    color: "white",
-                    maxWidth: "80%",
-                    fontSize: "18px",
-                    whiteSpace:
-                      "pre-wrap",
-                  }}
-                >
+                {msg.role === "assistant" ? (
+                  <ReactMarkdown>
+                    {msg.content}
+                  </ReactMarkdown>
+                ) : (
+                  msg.content
+                )}
 
-                  {msg.role === "assistant" ? (
-                    <ReactMarkdown>
-                      {msg.content}
-                    </ReactMarkdown>
-                  ) : (
-                    msg.content
-                  )}
+              </span>
 
-                </span>
-
-              </div>
-            )
-          )}
+            </div>
+          ))}
 
         </div>
 
@@ -315,9 +322,6 @@ export default function HomePage() {
               !e.shiftKey
             ) {
               e.preventDefault();
-
-              // Teclado:
-              // no activa voz
               askAI(undefined, false);
             }
           }}
