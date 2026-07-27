@@ -70,6 +70,14 @@ export default function HomePage() {
     return `${sourceDisplay.flag} ${sourceDisplay.short} → ${targetDisplay.flag} ${targetDisplay.short}`;
   }
 
+  function getSpeechRecognitionLanguage() {
+    if (sourceLanguage === "auto") {
+      return "";
+    }
+
+    return getSpeechLanguageCode(sourceLanguage);
+  }
+
   function startListening() {
     const SpeechRecognition =
       window.SpeechRecognition ||
@@ -82,12 +90,7 @@ export default function HomePage() {
 
     const recognition = new SpeechRecognition();
 
-    const speechRecognitionLanguage =
-      sourceLanguage === "auto"
-        ? getSpeechLanguageCode(navigator.language || "en-US")
-        : getSpeechLanguageCode(sourceLanguage);
-
-    recognition.lang = speechRecognitionLanguage;
+    recognition.lang = getSpeechRecognitionLanguage();
     recognition.continuous = false;
     recognition.interimResults = false;
 
@@ -316,7 +319,7 @@ export default function HomePage() {
 
     const resolvedSourceLanguage =
       sourceLanguage === "auto"
-        ? getSpeechLanguageCode(navigator.language || "en-US")
+        ? "auto"
         : sourceLanguage;
 
     try {
