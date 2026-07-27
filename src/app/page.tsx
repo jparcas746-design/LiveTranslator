@@ -68,7 +68,54 @@ export default function HomePage() {
     recognition.start();
   }
 
-  function speak(text: string) {
+  function getSpeechLanguageCode(language: string) {
+    const normalized = language?.toLowerCase();
+
+    switch (normalized) {
+      case "en":
+        return "en-US";
+      case "es":
+        return "es-ES";
+      case "fr":
+        return "fr-FR";
+      case "de":
+        return "de-DE";
+      case "ja":
+        return "ja-JP";
+      case "pt":
+        return "pt-BR";
+      case "it":
+        return "it-IT";
+      case "nl":
+        return "nl-NL";
+      case "ru":
+        return "ru-RU";
+      case "zh":
+        return "zh-CN";
+      default:
+        return language || navigator.language || "es-ES";
+    }
+  }
+
+  function getVoiceForLanguage(languageCode: string) {
+    const voices = window.speechSynthesis.getVoices?.() || [];
+    const normalized = languageCode.toLowerCase();
+    const preferredCodes = [normalized, normalized.split("-")[0]];
+
+    for (const preferredCode of preferredCodes) {
+      const match = voices.find((voice: SpeechSynthesisVoice) =>
+        voice.lang.toLowerCase().startsWith(preferredCode)
+      );
+
+      if (match) {
+        return match;
+      }
+    }
+
+    return undefined;
+  }
+
+  function speak(text: string, languageCode?: string) {
     if (!window.speechSynthesis) return;
 
     window.speechSynthesis.cancel();
@@ -76,8 +123,13 @@ export default function HomePage() {
     const utterance =
       new SpeechSynthesisUtterance(text);
 
-    utterance.lang =
-      navigator.language || "es-ES";
+    const resolvedLanguage = languageCode || navigator.language || "es-ES";
+    utterance.lang = resolvedLanguage;
+
+    const matchingVoice = getVoiceForLanguage(resolvedLanguage);
+    if (matchingVoice) {
+      utterance.voice = matchingVoice;
+    }
 
     utterance.rate = 1;
     utterance.pitch = 1;
@@ -125,7 +177,8 @@ export default function HomePage() {
       setTranslatedText(translation);
 
       if (fromVoice) {
-        speak(translation);
+        const translationLanguage = getSpeechLanguageCode(targetLanguage);
+        speak(translation, translationLanguage);
       }
     } catch (error) {
       setTranslatedText("Error: " + String(error));
