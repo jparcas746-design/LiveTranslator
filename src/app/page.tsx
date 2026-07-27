@@ -22,9 +22,10 @@ export default function HomePage() {
   const [responseStyle, setResponseStyle] = useState<"formal" | "balanced" | "casual">("balanced");
   const [mode, setMode] = useState<"chat" | "translation">("chat");
   const [sourceText, setSourceText] = useState("");
-  const [translatedText, setTranslatedText] = useState("Translation preview will appear here.");
+  const [translatedText, setTranslatedText] = useState("");
   const [sourceLanguage, setSourceLanguage] = useState("auto");
   const [targetLanguage, setTargetLanguage] = useState("en");
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   function startListening() {
     const SpeechRecognition =
@@ -136,7 +137,7 @@ export default function HomePage() {
   }
 
   function speak(text: string, languageCode?: string) {
-    if (!window.speechSynthesis) return;
+    if (!window.speechSynthesis || !text?.trim()) return;
 
     window.speechSynthesis.cancel();
 
@@ -154,8 +155,29 @@ export default function HomePage() {
     utterance.rate = 1;
     utterance.pitch = 1;
     utterance.volume = 1;
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
 
     window.speechSynthesis.speak(utterance);
+  }
+
+  function stopPlayback() {
+    if (!window.speechSynthesis) return;
+
+    window.speechSynthesis.cancel();
+    setIsSpeaking(false);
+  }
+
+  function playTranslatedResult() {
+    const trimmed = translatedText.trim();
+
+    if (!trimmed || trimmed === "Translating..." || trimmed.startsWith("Error:")) {
+      return;
+    }
+
+    const translationLanguage = getSpeechLanguageCode(targetLanguage);
+    speak(trimmed, translationLanguage);
   }
 
   async function handleTranslationSubmit(textOverride?: string, fromVoice = false) {
@@ -281,6 +303,12 @@ export default function HomePage() {
       ]);
     }
   }
+
+  const hasTranslationToPlay = Boolean(
+    translatedText.trim() &&
+      translatedText !== "Translating..." &&
+      !translatedText.startsWith("Error:")
+  );
 
   return (
     <main
@@ -503,6 +531,7 @@ export default function HomePage() {
               <textarea
                 value={translatedText}
                 readOnly
+                placeholder="Translation preview will appear here."
                 style={{
                   width: "100%",
                   minHeight: "120px",
@@ -516,6 +545,40 @@ export default function HomePage() {
                 }}
               />
             </label>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <button
+                onClick={playTranslatedResult}
+                disabled={!hasTranslationToPlay}
+                title="Play translated text"
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  border: "1px solid #475569",
+                  background: hasTranslationToPlay ? "#16a34a" : "#334155",
+                  color: "white",
+                  cursor: hasTranslationToPlay ? "pointer" : "not-allowed",
+                  opacity: hasTranslationToPlay ? 1 : 0.7,
+                }}
+              >
+                ▶️ Play
+              </button>
+              <button
+                onClick={stopPlayback}
+                disabled={!isSpeaking}
+                title="Stop playback"
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  border: "1px solid #475569",
+                  background: isSpeaking ? "#dc2626" : "#334155",
+                  color: "white",
+                  cursor: isSpeaking ? "pointer" : "not-allowed",
+                  opacity: isSpeaking ? 1 : 0.7,
+                }}
+              >
+                ⏹️ Stop
+              </button>
+            </div>
           </div>
         )}
 
