@@ -13,6 +13,7 @@ export async function POST(req: Request) {
       translationMode = false,
       sourceLanguage = "auto",
       targetLanguage = "en",
+      text,
     } = await req.json();
     const conversationMessages = Array.isArray(messages) ? messages : [];
 
@@ -27,21 +28,24 @@ export async function POST(req: Request) {
 
 Your only task is translation.
 
+Translate the user's text from the source language to the target language.
+
 Rules:
-- Detect the source language automatically if sourceLanguage is auto.
-- Translate the user's text into the target language.
-- Return ONLY the translated text.
-- Do not explain.
-- Do not answer questions.
-- Do not add extra information.
-- Preserve the meaning and natural expressions of the original text.
+- Never repeat the original text.
+- Never answer the content of the sentence.
+- Never explain.
+- Output ONLY the translated sentence.
+- Preserve meaning and natural phrasing.
 
 Source language: ${sourceLanguage === "auto" ? "auto-detected" : sourceLanguage}
 Target language: ${targetLanguage}`;
 
-    const lastUserMessage = conversationMessages.length > 0
-      ? conversationMessages[conversationMessages.length - 1]
-      : null;
+    const translationInput =
+      typeof text === "string" && text.trim()
+        ? text
+        : conversationMessages.length > 0
+          ? conversationMessages[conversationMessages.length - 1]?.content ?? ""
+          : "";
 
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
@@ -111,7 +115,7 @@ You are a virtual assistant.
 `,
         },
         ...(translationMode
-          ? [{ role: "user", content: lastUserMessage?.content ?? "" }]
+          ? [{ role: "user", content: translationInput }]
           : conversationMessages),
       ],
     });

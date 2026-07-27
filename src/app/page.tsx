@@ -107,6 +107,7 @@ export default function HomePage() {
               content: trimmed,
             },
           ],
+          text: trimmed,
           responseStyle: responseStyle,
           translationMode: true,
           sourceLanguage,
