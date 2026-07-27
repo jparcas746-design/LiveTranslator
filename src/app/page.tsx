@@ -99,20 +99,40 @@ export default function HomePage() {
 
   function getVoiceForLanguage(languageCode: string) {
     const voices = window.speechSynthesis.getVoices?.() || [];
-    const normalized = languageCode.toLowerCase();
-    const preferredCodes = [normalized, normalized.split("-")[0]];
+    const normalized = (languageCode || "").toLowerCase();
+    const baseLanguage = normalized.split("-")[0];
 
-    for (const preferredCode of preferredCodes) {
-      const match = voices.find((voice: SpeechSynthesisVoice) =>
-        voice.lang.toLowerCase().startsWith(preferredCode)
-      );
+    const rankedVoices = voices
+      .map((voice: SpeechSynthesisVoice) => {
+        const lang = voice.lang.toLowerCase();
+        const matchesExact = lang === normalized;
+        const matchesBase = lang.startsWith(baseLanguage + "-") || lang.startsWith(baseLanguage);
+        const isNatural = /natural|premium|female|male|neural|wave|universal/i.test(voice.name.toLowerCase());
+        const isGoogle = /google|siri|azure|amazon|polly|neural/i.test(voice.name.toLowerCase());
+        const isDefault = /default/i.test(voice.name.toLowerCase());
 
-      if (match) {
-        return match;
-      }
+        let score = 0;
+        if (matchesExact) score += 100;
+        if (matchesBase) score += 40;
+        if (isGoogle) score += 20;
+        if (isNatural) score += 15;
+        if (isDefault) score += 5;
+
+        return { voice, score };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    const preferredVoice = rankedVoices.find((entry) => entry.score >= 100);
+    if (preferredVoice) {
+      return preferredVoice.voice;
     }
 
-    return undefined;
+    const fallbackVoice = rankedVoices.find((entry) => entry.score >= 40);
+    if (fallbackVoice) {
+      return fallbackVoice.voice;
+    }
+
+    return rankedVoices[0]?.voice;
   }
 
   function speak(text: string, languageCode?: string) {
