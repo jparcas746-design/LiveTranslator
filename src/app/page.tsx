@@ -666,27 +666,7 @@ export default function HomePage() {
               resize: "none",
             }}
           />
-        ) : (
-          <textarea
-            value={sourceText}
-            onChange={(e) => setSourceText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleTranslationSubmit();
-              }
-            }}
-            placeholder="Type text to translate..."
-            style={{
-              width: "100%",
-              height: "100px",
-              padding: "15px",
-              borderRadius: "10px",
-              fontSize: "20px",
-              resize: "none",
-            }}
-          />
-        )}
+        ) : null}
 
         <button
           onClick={startListening}
