@@ -626,7 +626,7 @@ export default function HomePage() {
             </button>
             <button
               onClick={() => setMode(mode === "translation" ? "chat" : "translation")}
-              title="Translation"
+              title="Switch mode"
               style={{
                 padding: "10px 15px",
                 borderRadius: "10px",
@@ -637,7 +637,7 @@ export default function HomePage() {
                 fontSize: "18px",
               }}
             >
-              🌎 Translation
+              🌎
             </button>
           </div>
         </div>
