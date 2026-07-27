@@ -19,7 +19,6 @@ export default function HomePage() {
   const [text, setText] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [listening, setListening] = useState(false);
-  const [voiceLanguage, setVoiceLanguage] = useState("es-ES");
 
 
   function startListening() {
@@ -27,10 +26,12 @@ export default function HomePage() {
       window.SpeechRecognition ||
       window.webkitSpeechRecognition;
 
+
     if (!SpeechRecognition) {
       alert("Tu navegador no soporta reconocimiento de voz");
       return;
     }
+
 
     const recognition = new SpeechRecognition();
 
@@ -57,20 +58,14 @@ export default function HomePage() {
 
 
     recognition.onresult = (event: any) => {
+
       const transcript =
         event.results[0][0].transcript;
 
 
-      const detectedLanguage =
-        /^[a-zA-Z\s.,!?'"-]+$/.test(transcript)
-          ? "en-US"
-          : "es-ES";
-
-
-      setVoiceLanguage(detectedLanguage);
-
-
+      // La voz entra directamente al chat
       askAI(transcript, true);
+
     };
 
 
@@ -80,64 +75,19 @@ export default function HomePage() {
 
 
   function speak(text: string) {
+
     if (!window.speechSynthesis) return;
 
 
     window.speechSynthesis.cancel();
 
 
-    const voices =
-      window.speechSynthesis.getVoices();
-
-
     const utterance =
       new SpeechSynthesisUtterance(text);
 
 
-    utterance.lang = voiceLanguage;
-
-
-    let selectedVoice = null;
-
-
-    if (voiceLanguage === "en-US") {
-
-      selectedVoice = voices.find(
-        (voice) =>
-          voice.name.includes("Microsoft David") ||
-          voice.name.includes("Microsoft Mark") ||
-          voice.name.includes("Google US English")
-      );
-
-
-    } else {
-
-
-      selectedVoice = voices.find(
-        (voice) =>
-          voice.name.includes("Google español") ||
-          voice.lang === "es-ES"
-      );
-
-    }
-
-
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
-
-      console.log(
-        "Voz usada:",
-        selectedVoice.name,
-        selectedVoice.lang
-      );
-
-    } else {
-
-      console.log(
-        "No se encontró voz compatible"
-      );
-
-    }
+    utterance.lang =
+      navigator.language || "es-ES";
 
 
     utterance.rate = 1;
@@ -145,9 +95,10 @@ export default function HomePage() {
     utterance.volume = 1;
 
 
-    window.speechSynthesis.speak(utterance);
+    window.speechSynthesis.speak(
+      utterance
+    );
   }
-
 
 
 
@@ -196,7 +147,7 @@ export default function HomePage() {
     try {
 
       const res = await fetch(
-        "/api-translate",
+        "/api/translate",
         {
           method: "POST",
           headers: {
@@ -225,7 +176,7 @@ export default function HomePage() {
 
       const aiResponse =
         data.response ||
-        "ThorAI no devolvió respuesta.";
+        "ThorAI no respondió.";
 
 
 
@@ -239,6 +190,7 @@ export default function HomePage() {
 
 
 
+      // Solo habla si vino del micrófono
       if (fromVoice) {
         speak(aiResponse);
       }
@@ -263,7 +215,6 @@ export default function HomePage() {
 
 
 
-
   return (
     <main
       style={{
@@ -281,9 +232,6 @@ export default function HomePage() {
           background: "#1e293b",
           borderRadius: "20px",
           padding: "30px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "20px",
         }}
       >
 
@@ -298,147 +246,121 @@ export default function HomePage() {
         </h1>
 
 
-
         <div
           style={{
             height: "500px",
             overflowY: "auto",
-            padding: "15px",
             background: "#0f172a",
+            padding: "20px",
             borderRadius: "15px",
           }}
         >
 
-          {messages.map(
-            (msg, index) => (
+          {messages.map((msg,index)=>(
+            <div
+              key={index}
+              style={{
+                marginBottom:"15px",
+                textAlign:
+                  msg.role==="user"
+                  ? "right"
+                  : "left",
+              }}
+            >
 
-              <div
-                key={index}
+              <span
                 style={{
-                  marginBottom: "15px",
-                  textAlign:
-                    msg.role === "user"
-                      ? "right"
-                      : "left",
+                  display:"inline-block",
+                  padding:"15px",
+                  borderRadius:"15px",
+                  background:
+                    msg.role==="user"
+                    ? "#2563eb"
+                    : "#334155",
+                  color:"white",
+                  maxWidth:"80%",
                 }}
               >
 
-                <span
-                  style={{
-                    display:
-                      "inline-block",
-                    padding: "15px",
-                    borderRadius:
-                      "15px",
-                    background:
-                      msg.role === "user"
-                        ? "#2563eb"
-                        : "#334155",
-                    color: "white",
-                    maxWidth: "80%",
-                    fontSize: "18px",
-                    whiteSpace:
-                      "pre-wrap",
-                  }}
-                >
+                {msg.role==="assistant" ? (
+                  <ReactMarkdown>
+                    {msg.content}
+                  </ReactMarkdown>
+                ) : (
+                  msg.content
+                )}
 
-                  {msg.role === "assistant" ? (
+              </span>
 
-                    <ReactMarkdown>
-                      {msg.content}
-                    </ReactMarkdown>
-
-                  ) : (
-
-                    msg.content
-
-                  )}
-
-                </span>
-
-              </div>
-
-            )
-          )}
+            </div>
+          ))}
 
         </div>
 
 
 
-
         <textarea
           value={text}
-          onChange={(e) =>
-            setText(e.target.value)
-          }
+          onChange={(e)=>setText(e.target.value)}
+          onKeyDown={(e)=>{
 
-          onKeyDown={(e) => {
-
-            if (
-              e.key === "Enter" &&
+            if(
+              e.key==="Enter" &&
               !e.shiftKey
-            ) {
-
+            ){
               e.preventDefault();
-
-              askAI(undefined, false);
-
+              askAI(undefined,false);
             }
 
           }}
-
           placeholder="Escribe un mensaje..."
-
           style={{
-            width: "100%",
-            height: "100px",
-            padding: "15px",
-            borderRadius: "10px",
-            fontSize: "20px",
-            resize: "none",
+            width:"100%",
+            height:"100px",
+            marginTop:"20px",
+            padding:"15px",
+            borderRadius:"10px",
+            fontSize:"20px",
+            resize:"none",
           }}
-
         />
-
 
 
 
         <button
           onClick={startListening}
           style={{
-            padding: "15px",
-            borderRadius: "10px",
-            border: "none",
+            width:"100%",
+            marginTop:"15px",
+            padding:"15px",
+            borderRadius:"10px",
+            border:"none",
             background:
               listening
-                ? "#dc2626"
-                : "#16a34a",
-            color: "white",
-            fontSize: "22px",
-            cursor: "pointer",
+              ? "#dc2626"
+              : "#16a34a",
+            color:"white",
+            fontSize:"22px",
           }}
         >
           {listening
-            ? "🎙️ Escuchando..."
-            : "🎤 Hablar"}
+          ? "🎙️ Escuchando..."
+          : "🎤 Hablar"}
         </button>
 
 
 
-
         <button
-          onClick={() =>
-            askAI(undefined, false)
-          }
-
+          onClick={()=>askAI(undefined,false)}
           style={{
-            padding: "15px",
-            borderRadius: "10px",
-            border: "none",
-            background: "#2563eb",
-            color: "white",
-            fontSize: "22px",
-            cursor: "pointer",
+            width:"100%",
+            marginTop:"15px",
+            padding:"15px",
+            borderRadius:"10px",
+            border:"none",
+            background:"#2563eb",
+            color:"white",
+            fontSize:"22px",
           }}
         >
           Enviar ⚡
