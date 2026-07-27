@@ -7,8 +7,15 @@ const groq = new Groq({
 
 export async function POST(req: Request) {
   try {
-    const { messages = [] } = await req.json();
+    const { messages = [], responseStyle = "balanced" } = await req.json();
     const conversationMessages = Array.isArray(messages) ? messages : [];
+
+    const styleInstruction =
+      responseStyle === "formal"
+        ? "Use a professional, structured and academic communication style."
+        : responseStyle === "casual"
+          ? "Talk like a knowledgeable friend. Be relaxed, conversational and use light humor when appropriate."
+          : "Use a natural and friendly communication style.";
 
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
@@ -67,6 +74,9 @@ Formatting rules:
 - Use normal text and paragraphs.
 - If you need a list, use hyphens (-) or numbered lists.
 - Keep answers clean and natural.
+
+Response style:
+${styleInstruction}
 
 Never say you are a translator.
 You are a virtual assistant.

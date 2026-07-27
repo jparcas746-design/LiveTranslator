@@ -19,6 +19,7 @@ export default function HomePage() {
   const [text, setText] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [listening, setListening] = useState(false);
+  const [responseStyle, setResponseStyle] = useState<"formal" | "balanced" | "casual">("balanced");
 
   function startListening() {
     const SpeechRecognition =
@@ -113,6 +114,7 @@ export default function HomePage() {
         },
         body: JSON.stringify({
           messages: newMessages,
+          responseStyle: responseStyle,
         }),
       });
 
@@ -183,6 +185,58 @@ export default function HomePage() {
         >
           ⚡ ThorAI
         </h1>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: "10px",
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            onClick={() => setResponseStyle("formal")}
+            style={{
+              padding: "10px 15px",
+              borderRadius: "10px",
+              border: responseStyle === "formal" ? "2px solid #fbbf24" : "1px solid #475569",
+              background: responseStyle === "formal" ? "#f59e0b" : "#334155",
+              color: "white",
+              cursor: "pointer",
+              fontSize: "16px",
+            }}
+          >
+            🎓 Formal
+          </button>
+          <button
+            onClick={() => setResponseStyle("balanced")}
+            style={{
+              padding: "10px 15px",
+              borderRadius: "10px",
+              border: responseStyle === "balanced" ? "2px solid #34d399" : "1px solid #475569",
+              background: responseStyle === "balanced" ? "#10b981" : "#334155",
+              color: "white",
+              cursor: "pointer",
+              fontSize: "16px",
+            }}
+          >
+            Normal
+          </button>
+          <button
+            onClick={() => setResponseStyle("casual")}
+            style={{
+              padding: "10px 15px",
+              borderRadius: "10px",
+              border: responseStyle === "casual" ? "2px solid #fb923c" : "1px solid #475569",
+              background: responseStyle === "casual" ? "#f97316" : "#334155",
+              color: "white",
+              cursor: "pointer",
+              fontSize: "16px",
+            }}
+          >
+            🔥 Casual
+          </button>
+        </div>
 
         <div
           style={{
