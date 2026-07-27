@@ -569,7 +569,7 @@ export default function HomePage() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: "8px", alignItems: "center" }}>
           <div style={{ color: "#e2e8f0", fontSize: "14px", fontWeight: 600, letterSpacing: "0.04em" }}>
-            Response style
+            🎛️
           </div>
           <div
             style={{
@@ -701,11 +701,11 @@ export default function HomePage() {
             }}
           >
             <h2 style={{ color: "white", margin: 0, fontSize: "24px" }}>
-              🌎 Translation Mode
+              �
             </h2>
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "flex-end" }}>
               <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
-                Source language
+                🔤
                 <select
                   value={sourceLanguage}
                   onChange={(e) => setSourceLanguage(e.target.value)}
@@ -720,7 +720,7 @@ export default function HomePage() {
                 </select>
               </label>
               <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
-                Target language
+                🎯
                 <select
                   value={targetLanguage}
                   onChange={(e) => setTargetLanguage(e.target.value)}
@@ -749,7 +749,7 @@ export default function HomePage() {
               </div>
             </div>
             <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
-              Original text
+              ✍️
               <textarea
                 value={sourceText}
                 onChange={(e) => setSourceText(e.target.value)}
@@ -759,7 +759,7 @@ export default function HomePage() {
                     handleTranslationSubmit();
                   }
                 }}
-                placeholder="Type or speak the text to translate..."
+                placeholder="✍️ / 🎤"
                 style={{
                   width: "100%",
                   minHeight: "120px",
@@ -772,7 +772,7 @@ export default function HomePage() {
               />
             </label>
             <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
-              Translated text
+              🗣️
               <div
                 style={{
                   width: "100%",
@@ -787,14 +787,14 @@ export default function HomePage() {
                   overflowWrap: "anywhere",
                 }}
               >
-                {translatedText || "Translation preview will appear here."}
+                {translatedText || "⏳"}
               </div>
             </label>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-start" }}>
               <button
                 onClick={retranslatePrevious}
                 disabled={!lastTranslation}
-                title="Translate the previous text again with the current target language"
+                title="Re-translate previous text"
                 style={{
                   padding: "10px 14px",
                   borderRadius: "10px",
@@ -807,13 +807,9 @@ export default function HomePage() {
                   fontWeight: 600,
                 }}
               >
-                🔄 Re-translate
+                🔄
               </button>
-              {!lastTranslation && (
-                <div style={{ color: "#cbd5e1", fontSize: "13px" }}>
-                  No previous translation available.
-                </div>
-              )}
+              {!lastTranslation && null}
             </div>
             {showAudioControls && (
               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
@@ -829,7 +825,7 @@ export default function HomePage() {
                     cursor: "pointer",
                   }}
                 >
-                  ▶️ Play
+                  ▶️
                 </button>
                 <button
                   onClick={pausePlayback}
@@ -845,7 +841,7 @@ export default function HomePage() {
                     opacity: isSpeaking && !isPaused ? 1 : 0.7,
                   }}
                 >
-                  ⏸️ Pause
+                  ⏸️
                 </button>
                 <button
                   onClick={resumePlayback}
@@ -861,7 +857,7 @@ export default function HomePage() {
                     opacity: isPaused ? 1 : 0.7,
                   }}
                 >
-                  ▶️ Resume
+                  ▶️
                 </button>
                 <button
                   onClick={stopPlayback}
@@ -875,7 +871,7 @@ export default function HomePage() {
                     cursor: "pointer",
                   }}
                 >
-                  ⏹️ Stop
+                  ⏹️
                 </button>
               </div>
             )}
@@ -897,7 +893,7 @@ export default function HomePage() {
                 askAI(undefined, false);
               }
             }}
-            placeholder="Escribe un mensaje..."
+            placeholder="💬"
             style={{
               width: "100%",
               height: "100px",
