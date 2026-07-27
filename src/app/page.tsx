@@ -43,6 +43,33 @@ export default function HomePage() {
     { name: "Русский", code: "ru-RU" },
   ];
 
+  const languageDisplayMap: Record<string, { flag: string; short: string }> = {
+    "auto": { flag: "🌐", short: "AUTO" },
+    "es-ES": { flag: "🇪🇸", short: "ESP" },
+    "en-US": { flag: "🇬🇧", short: "ENG" },
+    "fr-FR": { flag: "🇫🇷", short: "FRA" },
+    "de-DE": { flag: "🇩🇪", short: "DEU" },
+    "it-IT": { flag: "🇮🇹", short: "ITA" },
+    "pt-PT": { flag: "🇵🇹", short: "PT" },
+    "ja-JP": { flag: "🇯🇵", short: "JPN" },
+    "ko-KR": { flag: "🇰🇷", short: "KOR" },
+    "zh-CN": { flag: "🇨🇳", short: "CHN" },
+    "nl-NL": { flag: "🇳🇱", short: "NLD" },
+    "sv-SE": { flag: "🇸🇪", short: "SWE" },
+    "ru-RU": { flag: "🇷🇺", short: "RUS" },
+  };
+
+  function getLanguageDisplay(languageCode: string) {
+    return languageDisplayMap[languageCode] || { flag: "🌐", short: "LANG" };
+  }
+
+  function getDirectionLabel() {
+    const sourceDisplay = getLanguageDisplay(sourceLanguage);
+    const targetDisplay = getLanguageDisplay(targetLanguage);
+
+    return `${sourceDisplay.flag} ${sourceDisplay.short} → ${targetDisplay.flag} ${targetDisplay.short}`;
+  }
+
   function startListening() {
     const SpeechRecognition =
       window.SpeechRecognition ||
@@ -55,7 +82,12 @@ export default function HomePage() {
 
     const recognition = new SpeechRecognition();
 
-    recognition.lang = navigator.language || "es-ES";
+    const speechRecognitionLanguage =
+      sourceLanguage === "auto"
+        ? getSpeechLanguageCode(navigator.language || "en-US")
+        : getSpeechLanguageCode(sourceLanguage);
+
+    recognition.lang = speechRecognitionLanguage;
     recognition.continuous = false;
     recognition.interimResults = false;
 
@@ -282,6 +314,11 @@ export default function HomePage() {
     setSourceText(trimmed);
     setTranslatedText("Translating...");
 
+    const resolvedSourceLanguage =
+      sourceLanguage === "auto"
+        ? getSpeechLanguageCode(navigator.language || "en-US")
+        : sourceLanguage;
+
     try {
       const res = await fetch("/api/translate", {
         method: "POST",
@@ -298,7 +335,7 @@ export default function HomePage() {
           text: trimmed,
           responseStyle: responseStyle,
           translationMode: true,
-          sourceLanguage,
+          sourceLanguage: resolvedSourceLanguage,
           targetLanguage,
         }),
       });
@@ -573,7 +610,7 @@ export default function HomePage() {
             <h2 style={{ color: "white", margin: 0, fontSize: "24px" }}>
               🌎 Translation Mode
             </h2>
-            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "flex-end" }}>
               <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
                 Source language
                 <select
@@ -603,6 +640,20 @@ export default function HomePage() {
                   ))}
                 </select>
               </label>
+              <div
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: "999px",
+                  border: "1px solid #475569",
+                  background: "#0f172a",
+                  color: "#f8fafc",
+                  fontSize: "15px",
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {getDirectionLabel()}
+              </div>
             </div>
             <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
               Original text
