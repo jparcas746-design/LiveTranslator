@@ -625,6 +625,7 @@ export default function HomePage() {
               <button
                 onClick={() => setMode("chat")}
                 title="Return to assistant mode"
+                aria-label="Return to assistant mode"
                 style={{
                   padding: "10px 15px",
                   borderRadius: "10px",
@@ -633,14 +634,16 @@ export default function HomePage() {
                   color: "white",
                   cursor: "pointer",
                   fontSize: "18px",
+                  lineHeight: 1,
                 }}
               >
-                ⬅️
+                ←
               </button>
             ) : (
               <button
                 onClick={() => setMode("translation")}
                 title="Switch to translation mode"
+                aria-label="Switch to translation mode"
                 style={{
                   padding: "10px 15px",
                   borderRadius: "10px",
@@ -649,9 +652,10 @@ export default function HomePage() {
                   color: "white",
                   cursor: "pointer",
                   fontSize: "18px",
+                  lineHeight: 1,
                 }}
               >
-                🌎
+                ⇄
               </button>
             )}
           </div>
@@ -715,12 +719,31 @@ export default function HomePage() {
               borderRadius: "15px",
             }}
           >
-            <h2 style={{ color: "white", margin: 0, fontSize: "24px" }}>
-              �
-            </h2>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+              <h2 style={{ color: "white", margin: 0, fontSize: "24px" }}>
+                Translation
+              </h2>
+              <button
+                onClick={() => setMode("chat")}
+                title="Return to assistant mode"
+                aria-label="Return to assistant mode"
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "10px",
+                  border: "1px solid #475569",
+                  background: "#334155",
+                  color: "white",
+                  cursor: "pointer",
+                  fontSize: "18px",
+                  lineHeight: 1,
+                }}
+              >
+                ←
+              </button>
+            </div>
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "flex-end" }}>
               <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
-                🔤
+                Source language
                 <select
                   value={sourceLanguage}
                   onChange={(e) => setSourceLanguage(e.target.value)}
@@ -735,7 +758,7 @@ export default function HomePage() {
                 </select>
               </label>
               <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
-                🎯
+                Target language
                 <select
                   value={targetLanguage}
                   onChange={(e) => setTargetLanguage(e.target.value)}
@@ -764,7 +787,7 @@ export default function HomePage() {
               </div>
             </div>
             <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
-              ✍️
+              Source text
               <textarea
                 value={sourceText}
                 onChange={(e) => setSourceText(e.target.value)}
@@ -774,7 +797,7 @@ export default function HomePage() {
                     handleTranslationSubmit();
                   }
                 }}
-                placeholder="✍️ / 🎤"
+                placeholder="Type text or use voice input"
                 style={{
                   width: "100%",
                   minHeight: "120px",
@@ -787,7 +810,7 @@ export default function HomePage() {
               />
             </label>
             <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
-              🗣️
+              Translation
               <div
                 style={{
                   width: "100%",
@@ -802,7 +825,7 @@ export default function HomePage() {
                   overflowWrap: "anywhere",
                 }}
               >
-                {translatedText || "⏳"}
+                {translatedText || "Waiting for translation..."}
               </div>
             </label>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-start" }}>
