@@ -557,10 +557,7 @@ export default function HomePage() {
             </label>
             <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
               Translated text
-              <textarea
-                value={translatedText}
-                readOnly
-                placeholder="Translation preview will appear here."
+              <div
                 style={{
                   width: "100%",
                   minHeight: "120px",
@@ -568,11 +565,14 @@ export default function HomePage() {
                   padding: "12px",
                   borderRadius: "10px",
                   fontSize: "18px",
-                  resize: "vertical",
                   background: "#1f2937",
                   color: "#f8fafc",
+                  whiteSpace: "pre-wrap",
+                  overflowWrap: "anywhere",
                 }}
-              />
+              >
+                {translatedText || "Translation preview will appear here."}
+              </div>
             </label>
             {showAudioControls && (
               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
