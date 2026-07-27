@@ -27,6 +27,12 @@ export default function HomePage() {
   const [targetLanguage, setTargetLanguage] = useState("en-US");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [lastTranslation, setLastTranslation] = useState<{
+    originalText: string;
+    sourceLanguage: string;
+    targetLanguage: string;
+    translatedText: string;
+  } | null>(null);
 
   const languages = [
     { name: "Español", code: "es-ES" },
@@ -338,13 +344,13 @@ export default function HomePage() {
 
     if (!trimmed) return;
 
-    setSourceText(trimmed);
-    setTranslatedText("Translating...");
-
     const resolvedSourceLanguage =
       sourceLanguage === "auto"
         ? "auto"
         : sourceLanguage;
+
+    setSourceText(trimmed);
+    setTranslatedText("Translating...");
 
     try {
       const res = await fetch("/api/translate", {
@@ -375,11 +381,71 @@ export default function HomePage() {
       const translation = data.response || "No translation returned.";
 
       setTranslatedText(translation);
+      setLastTranslation({
+        originalText: trimmed,
+        sourceLanguage: resolvedSourceLanguage,
+        targetLanguage,
+        translatedText: translation,
+      });
 
       if (fromVoice) {
         const translationLanguage = getSpeechLanguageCode(targetLanguage);
         speak(translation, translationLanguage);
       }
+    } catch (error) {
+      setTranslatedText("Error: " + String(error));
+    }
+  }
+
+  async function retranslatePrevious() {
+    if (!lastTranslation?.originalText.trim()) {
+      return;
+    }
+
+    const nextTargetLanguage = targetLanguage;
+    const nextSourceLanguage = lastTranslation.sourceLanguage || sourceLanguage;
+
+    setSourceText(lastTranslation.originalText);
+    setTranslatedText("Translating...");
+
+    try {
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "user",
+              content: lastTranslation.originalText,
+            },
+          ],
+          text: lastTranslation.originalText,
+          responseStyle: responseStyle,
+          translationMode: true,
+          sourceLanguage: nextSourceLanguage,
+          targetLanguage: nextTargetLanguage,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Error del servidor: ${res.status}`);
+      }
+
+      const data = await res.json();
+      const translation = data.response || "No translation returned.";
+
+      setTranslatedText(translation);
+      setLastTranslation({
+        originalText: lastTranslation.originalText,
+        sourceLanguage: nextSourceLanguage,
+        targetLanguage: nextTargetLanguage,
+        translatedText: translation,
+      });
+
+      const translationLanguage = getSpeechLanguageCode(nextTargetLanguage);
+      speak(translation, translationLanguage);
     } catch (error) {
       setTranslatedText("Error: " + String(error));
     }
@@ -724,6 +790,30 @@ export default function HomePage() {
                 {translatedText || "Translation preview will appear here."}
               </div>
             </label>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <button
+                onClick={retranslatePrevious}
+                disabled={!lastTranslation}
+                title="Translate the previous text again with the current target language"
+                style={{
+                  alignSelf: "flex-start",
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  border: "1px solid #475569",
+                  background: lastTranslation ? "#7c3aed" : "#334155",
+                  color: "white",
+                  cursor: lastTranslation ? "pointer" : "not-allowed",
+                  opacity: lastTranslation ? 1 : 0.7,
+                }}
+              >
+                🔄 Translate again
+              </button>
+              {!lastTranslation && (
+                <div style={{ color: "#cbd5e1", fontSize: "13px" }}>
+                  No previous translation available.
+                </div>
+              )}
+            </div>
             {showAudioControls && (
               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                 <button
