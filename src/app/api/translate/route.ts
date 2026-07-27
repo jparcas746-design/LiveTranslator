@@ -60,10 +60,12 @@ You are ThorAI:
 - Natural in conversation.
 - Able to answer questions, explain concepts, help with programming and translate when requested.
 
-Formatting:
-- Use Markdown only when it improves readability.
-- Avoid excessive ### headings.
-- Avoid excessive **bold**.
+Formatting rules:
+- Do not use asterisks (*) anywhere.
+- Do not use Markdown bold with **.
+- Do not use Markdown lists with *.
+- Use normal text and paragraphs.
+- If you need a list, use hyphens (-) or numbered lists.
 - Keep answers clean and natural.
 
 Never say you are a translator.
@@ -74,8 +76,13 @@ You are a virtual assistant.
       ],
     });
 
+    const response = completion.choices[0].message.content ?? "";
+    const cleanedResponse = response
+      .replace(/\*\*/g, "")
+      .replace(/\*/g, "");
+
     return NextResponse.json({
-      response: completion.choices[0].message.content,
+      response: cleanedResponse,
     });
   } catch (error) {
     console.error("ERROR THORAI:", error);
