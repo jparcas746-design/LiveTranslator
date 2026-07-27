@@ -20,6 +20,9 @@ export default function HomePage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [listening, setListening] = useState(false);
   const [responseStyle, setResponseStyle] = useState<"formal" | "balanced" | "casual">("balanced");
+  const [mode, setMode] = useState<"chat" | "translation">("chat");
+  const [sourceText, setSourceText] = useState("");
+  const [translatedText, setTranslatedText] = useState("Translation preview will appear here.");
 
   function startListening() {
     const SpeechRecognition =
@@ -53,8 +56,12 @@ export default function HomePage() {
       const transcript =
         event.results[0][0].transcript;
 
-      // Voz: manda directamente y activa respuesta hablada
-      askAI(transcript, true);
+      if (mode === "translation") {
+        setSourceText(transcript);
+        setTranslatedText(transcript);
+      } else {
+        askAI(transcript, true);
+      }
     };
 
     recognition.start();
@@ -76,6 +83,14 @@ export default function HomePage() {
     utterance.volume = 1;
 
     window.speechSynthesis.speak(utterance);
+  }
+
+  function handleTranslationSubmit() {
+    const trimmed = sourceText.trim();
+
+    if (!trimmed) return;
+
+    setTranslatedText(trimmed);
   }
 
   async function askAI(
@@ -243,80 +258,193 @@ export default function HomePage() {
             >
               🔥
             </button>
+            <button
+              onClick={() => setMode(mode === "translation" ? "chat" : "translation")}
+              title="Translation"
+              style={{
+                padding: "10px 15px",
+                borderRadius: "10px",
+                border: mode === "translation" ? "2px solid #60a5fa" : "1px solid #475569",
+                background: mode === "translation" ? "#2563eb" : "#334155",
+                color: "white",
+                cursor: "pointer",
+                fontSize: "18px",
+              }}
+            >
+              🌎 Translation
+            </button>
           </div>
         </div>
 
-        <div
-          style={{
-            height: "500px",
-            overflowY: "auto",
-            padding: "15px",
-            background: "#0f172a",
-            borderRadius: "15px",
-          }}
-        >
-          {messages.map((msg, index) => (
-            <div
-              key={index}
-              style={{
-                marginBottom: "15px",
-                textAlign:
-                  msg.role === "user"
-                    ? "right"
-                    : "left",
-              }}
-            >
-              <span
+        {mode === "chat" ? (
+          <div
+            style={{
+              height: "500px",
+              overflowY: "auto",
+              padding: "15px",
+              background: "#0f172a",
+              borderRadius: "15px",
+            }}
+          >
+            {messages.map((msg, index) => (
+              <div
+                key={index}
                 style={{
-                  display: "inline-block",
-                  padding: "15px",
-                  borderRadius: "15px",
-                  background:
+                  marginBottom: "15px",
+                  textAlign:
                     msg.role === "user"
-                      ? "#2563eb"
-                      : "#334155",
-                  color: "white",
-                  maxWidth: "80%",
-                  fontSize: "18px",
-                  whiteSpace: "pre-wrap",
+                      ? "right"
+                      : "left",
                 }}
               >
-                {msg.role === "assistant" ? (
-                  <ReactMarkdown>
-                    {msg.content}
-                  </ReactMarkdown>
-                ) : (
-                  msg.content
-                )}
-              </span>
+                <span
+                  style={{
+                    display: "inline-block",
+                    padding: "15px",
+                    borderRadius: "15px",
+                    background:
+                      msg.role === "user"
+                        ? "#2563eb"
+                        : "#334155",
+                    color: "white",
+                    maxWidth: "80%",
+                    fontSize: "18px",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {msg.role === "assistant" ? (
+                    <ReactMarkdown>
+                      {msg.content}
+                    </ReactMarkdown>
+                  ) : (
+                    msg.content
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "15px",
+              padding: "15px",
+              background: "#0f172a",
+              borderRadius: "15px",
+            }}
+          >
+            <h2 style={{ color: "white", margin: 0, fontSize: "24px" }}>
+              🌎 Translation Mode
+            </h2>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
+                Source language
+                <select defaultValue="auto" style={{ display: "block", marginTop: "6px", padding: "8px", borderRadius: "8px" }}>
+                  <option value="auto">Auto Detect</option>
+                  <option value="en">English</option>
+                  <option value="es">Spanish</option>
+                </select>
+              </label>
+              <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
+                Target language
+                <select defaultValue="en" style={{ display: "block", marginTop: "6px", padding: "8px", borderRadius: "8px" }}>
+                  <option value="en">English</option>
+                  <option value="es">Spanish</option>
+                  <option value="fr">French</option>
+                </select>
+              </label>
             </div>
-          ))}
-        </div>
+            <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
+              Original text
+              <textarea
+                value={sourceText}
+                onChange={(e) => setSourceText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleTranslationSubmit();
+                  }
+                }}
+                placeholder="Type or speak the text to translate..."
+                style={{
+                  width: "100%",
+                  minHeight: "120px",
+                  marginTop: "8px",
+                  padding: "12px",
+                  borderRadius: "10px",
+                  fontSize: "18px",
+                  resize: "vertical",
+                }}
+              />
+            </label>
+            <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
+              Translated text
+              <textarea
+                value={translatedText}
+                readOnly
+                style={{
+                  width: "100%",
+                  minHeight: "120px",
+                  marginTop: "8px",
+                  padding: "12px",
+                  borderRadius: "10px",
+                  fontSize: "18px",
+                  resize: "vertical",
+                  background: "#1f2937",
+                  color: "#f8fafc",
+                }}
+              />
+            </label>
+          </div>
+        )}
 
-        <textarea
-          value={text}
-          onChange={(e) =>
-            setText(e.target.value)
-          }
-          onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              !e.shiftKey
-            ) {
-              e.preventDefault();
-              askAI(undefined, false);
+        {mode === "chat" ? (
+          <textarea
+            value={text}
+            onChange={(e) =>
+              setText(e.target.value)
             }
-          }}
-          placeholder="Escribe un mensaje..."
-          style={{
-            width: "100%",
-            height: "100px",
-            padding: "15px",
-            borderRadius: "10px",
-            fontSize: "20px",
-            resize: "none",
-          }}
-        />
+            onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey
+              ) {
+                e.preventDefault();
+                askAI(undefined, false);
+              }
+            }}
+            placeholder="Escribe un mensaje..."
+            style={{
+              width: "100%",
+              height: "100px",
+              padding: "15px",
+              borderRadius: "10px",
+              fontSize: "20px",
+              resize: "none",
+            }}
+          />
+        ) : (
+          <textarea
+            value={sourceText}
+            onChange={(e) => setSourceText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleTranslationSubmit();
+              }
+            }}
+            placeholder="Type text to translate..."
+            style={{
+              width: "100%",
+              height: "100px",
+              padding: "15px",
+              borderRadius: "10px",
+              fontSize: "20px",
+              resize: "none",
+            }}
+          />
+        )}
 
         <button
           onClick={startListening}
@@ -337,8 +465,14 @@ export default function HomePage() {
         </button>
 
         <button
-          onClick={() => askAI(undefined, false)}
-          title="Send message"
+          onClick={() => {
+            if (mode === "translation") {
+              handleTranslationSubmit();
+            } else {
+              askAI(undefined, false);
+            }
+          }}
+          title={mode === "translation" ? "Translate" : "Send message"}
           style={{
             padding: "15px",
             borderRadius: "10px",
