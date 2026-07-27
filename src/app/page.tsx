@@ -568,9 +568,6 @@ export default function HomePage() {
         </h1>
 
         <div style={{ display: "flex", flexDirection: "column", gap: "8px", alignItems: "center" }}>
-          <div style={{ color: "#e2e8f0", fontSize: "14px", fontWeight: 600, letterSpacing: "0.04em" }}>
-            🎛️
-          </div>
           <div
             style={{
               display: "flex",
@@ -624,21 +621,39 @@ export default function HomePage() {
             >
               🔥
             </button>
-            <button
-              onClick={() => setMode(mode === "translation" ? "chat" : "translation")}
-              title="Switch mode"
-              style={{
-                padding: "10px 15px",
-                borderRadius: "10px",
-                border: mode === "translation" ? "2px solid #60a5fa" : "1px solid #475569",
-                background: mode === "translation" ? "#2563eb" : "#334155",
-                color: "white",
-                cursor: "pointer",
-                fontSize: "18px",
-              }}
-            >
-              🌎
-            </button>
+            {mode === "translation" ? (
+              <button
+                onClick={() => setMode("chat")}
+                title="Return to assistant mode"
+                style={{
+                  padding: "10px 15px",
+                  borderRadius: "10px",
+                  border: "1px solid #475569",
+                  background: "#334155",
+                  color: "white",
+                  cursor: "pointer",
+                  fontSize: "18px",
+                }}
+              >
+                ⬅️
+              </button>
+            ) : (
+              <button
+                onClick={() => setMode("translation")}
+                title="Switch to translation mode"
+                style={{
+                  padding: "10px 15px",
+                  borderRadius: "10px",
+                  border: "1px solid #475569",
+                  background: "#334155",
+                  color: "white",
+                  cursor: "pointer",
+                  fontSize: "18px",
+                }}
+              >
+                🌎
+              </button>
+            )}
           </div>
         </div>
 
