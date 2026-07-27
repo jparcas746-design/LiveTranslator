@@ -7,7 +7,8 @@ const groq = new Groq({
 
 export async function POST(req: Request) {
   try {
-    const { text } = await req.json();
+    const { messages = [] } = await req.json();
+    const conversationMessages = Array.isArray(messages) ? messages : [];
 
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
@@ -69,17 +70,13 @@ Never say you are a translator.
 You are a virtual assistant.
 `,
         },
-        {
-          role: "user",
-          content: text,
-        },
+        ...conversationMessages,
       ],
     });
 
     return NextResponse.json({
       response: completion.choices[0].message.content,
     });
-
   } catch (error) {
     console.error("ERROR THORAI:", error);
 
