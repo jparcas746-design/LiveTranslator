@@ -198,48 +198,51 @@ export default function HomePage() {
               flexWrap: "wrap",
             }}
           >
-          <button
-            onClick={() => setResponseStyle("formal")}
-            style={{
-              padding: "10px 15px",
-              borderRadius: "10px",
-              border: responseStyle === "formal" ? "2px solid #fbbf24" : "1px solid #475569",
-              background: responseStyle === "formal" ? "#f59e0b" : "#334155",
-              color: "white",
-              cursor: "pointer",
-              fontSize: "16px",
-            }}
-          >
-            🎓 Formal
-          </button>
-          <button
-            onClick={() => setResponseStyle("balanced")}
-            style={{
-              padding: "10px 15px",
-              borderRadius: "10px",
-              border: responseStyle === "balanced" ? "2px solid #34d399" : "1px solid #475569",
-              background: responseStyle === "balanced" ? "#10b981" : "#334155",
-              color: "white",
-              cursor: "pointer",
-              fontSize: "16px",
-            }}
-          >
-            Normal
-          </button>
-          <button
-            onClick={() => setResponseStyle("casual")}
-            style={{
-              padding: "10px 15px",
-              borderRadius: "10px",
-              border: responseStyle === "casual" ? "2px solid #fb923c" : "1px solid #475569",
-              background: responseStyle === "casual" ? "#f97316" : "#334155",
-              color: "white",
-              cursor: "pointer",
-              fontSize: "16px",
-            }}
-          >
-            🔥 Casual
-          </button>
+            <button
+              onClick={() => setResponseStyle("formal")}
+              title="Formal"
+              style={{
+                padding: "10px 15px",
+                borderRadius: "10px",
+                border: responseStyle === "formal" ? "2px solid #fbbf24" : "1px solid #475569",
+                background: responseStyle === "formal" ? "#f59e0b" : "#334155",
+                color: "white",
+                cursor: "pointer",
+                fontSize: "18px",
+              }}
+            >
+              🎓
+            </button>
+            <button
+              onClick={() => setResponseStyle("balanced")}
+              title="Normal"
+              style={{
+                padding: "10px 15px",
+                borderRadius: "10px",
+                border: responseStyle === "balanced" ? "2px solid #34d399" : "1px solid #475569",
+                background: responseStyle === "balanced" ? "#10b981" : "#334155",
+                color: "white",
+                cursor: "pointer",
+                fontSize: "18px",
+              }}
+            >
+              🙂
+            </button>
+            <button
+              onClick={() => setResponseStyle("casual")}
+              title="Casual"
+              style={{
+                padding: "10px 15px",
+                borderRadius: "10px",
+                border: responseStyle === "casual" ? "2px solid #fb923c" : "1px solid #475569",
+                background: responseStyle === "casual" ? "#f97316" : "#334155",
+                color: "white",
+                cursor: "pointer",
+                fontSize: "18px",
+              }}
+            >
+              🔥
+            </button>
           </div>
         </div>
 
@@ -317,6 +320,7 @@ export default function HomePage() {
 
         <button
           onClick={startListening}
+          title="Start voice input"
           style={{
             padding: "15px",
             borderRadius: "10px",
@@ -329,13 +333,12 @@ export default function HomePage() {
             cursor: "pointer",
           }}
         >
-          {listening
-            ? "🎙️ Escuchando..."
-            : "🎤 Hablar"}
+          {listening ? "🔴🎤" : "🎤"}
         </button>
 
         <button
           onClick={() => askAI(undefined, false)}
+          title="Send message"
           style={{
             padding: "15px",
             borderRadius: "10px",
@@ -346,7 +349,7 @@ export default function HomePage() {
             cursor: "pointer",
           }}
         >
-          Enviar ⚡
+          ⚡
         </button>
       </div>
     </main>
