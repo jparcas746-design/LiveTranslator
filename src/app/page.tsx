@@ -19,6 +19,8 @@ export default function HomePage() {
   const [text, setText] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [listening, setListening] = useState(false);
+  const [voiceLanguage, setVoiceLanguage] = useState("es-ES");
+
 
   function startListening() {
     const SpeechRecognition =
@@ -32,110 +34,134 @@ export default function HomePage() {
 
     const recognition = new SpeechRecognition();
 
-    recognition.lang = navigator.language || "es-ES";
+    recognition.lang =
+      navigator.language || "es-ES";
+
     recognition.continuous = false;
     recognition.interimResults = false;
+
 
     recognition.onstart = () => {
       setListening(true);
     };
 
+
     recognition.onend = () => {
       setListening(false);
     };
+
 
     recognition.onerror = () => {
       setListening(false);
     };
 
+
     recognition.onresult = (event: any) => {
       const transcript =
         event.results[0][0].transcript;
 
+
+      const detectedLanguage =
+        /^[a-zA-Z\s.,!?'"-]+$/.test(transcript)
+          ? "en-US"
+          : "es-ES";
+
+
+      setVoiceLanguage(detectedLanguage);
+
+
       askAI(transcript, true);
     };
+
 
     recognition.start();
   }
 
 
+
   function speak(text: string) {
     if (!window.speechSynthesis) return;
 
+
     window.speechSynthesis.cancel();
 
-    const speakNow = () => {
-      const voices =
-        window.speechSynthesis.getVoices();
 
-      const isEnglish =
-        !/[áéíóúñ¿¡]/i.test(text) &&
-        /[a-zA-Z]/.test(text);
-
-      const utterance =
-        new SpeechSynthesisUtterance(text);
-
-      let selectedVoice = null;
-
-      if (isEnglish) {
-        utterance.lang = "en-US";
-
-        selectedVoice = voices.find(
-          (voice) =>
-            voice.lang === "en-US" ||
-            voice.lang.startsWith("en")
-        );
-
-      } else {
-        utterance.lang = "es-ES";
-
-        selectedVoice = voices.find(
-          (voice) =>
-            voice.lang === "es-ES" ||
-            voice.lang.startsWith("es")
-        );
-      }
-
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-        console.log(
-          "Voz usada:",
-          selectedVoice.name,
-          selectedVoice.lang
-        );
-      } else {
-        console.log(
-          "No se encontró una voz compatible"
-        );
-      }
-
-      utterance.rate = 1;
-      utterance.pitch = 1;
-      utterance.volume = 1;
-
-      window.speechSynthesis.speak(utterance);
-    };
+    const voices =
+      window.speechSynthesis.getVoices();
 
 
-    if (
-      window.speechSynthesis.getVoices().length === 0
-    ) {
-      window.speechSynthesis.onvoiceschanged =
-        speakNow;
+    const utterance =
+      new SpeechSynthesisUtterance(text);
+
+
+    utterance.lang = voiceLanguage;
+
+
+    let selectedVoice = null;
+
+
+    if (voiceLanguage === "en-US") {
+
+      selectedVoice = voices.find(
+        (voice) =>
+          voice.name.includes("Microsoft David") ||
+          voice.name.includes("Microsoft Mark") ||
+          voice.name.includes("Google US English")
+      );
+
+
     } else {
-      speakNow();
+
+
+      selectedVoice = voices.find(
+        (voice) =>
+          voice.name.includes("Google español") ||
+          voice.lang === "es-ES"
+      );
+
     }
+
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+
+      console.log(
+        "Voz usada:",
+        selectedVoice.name,
+        selectedVoice.lang
+      );
+
+    } else {
+
+      console.log(
+        "No se encontró voz compatible"
+      );
+
+    }
+
+
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+
+
+    window.speechSynthesis.speak(utterance);
   }
+
+
 
 
   async function askAI(
     messageText?: string,
     fromVoice = false
   ) {
+
     const finalText =
       messageText || text;
 
+
     if (!finalText.trim()) return;
+
 
 
     const userMessage: Message = {
@@ -144,10 +170,12 @@ export default function HomePage() {
     };
 
 
+
     const newMessages = [
       ...messages,
       userMessage,
     ];
+
 
 
     setMessages([
@@ -160,22 +188,27 @@ export default function HomePage() {
     ]);
 
 
+
     setText("");
 
 
+
     try {
+
       const res = await fetch(
         "/api-translate",
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
           },
           body: JSON.stringify({
             text: finalText,
           }),
         }
       );
+
 
 
       if (!res.ok) {
@@ -185,12 +218,15 @@ export default function HomePage() {
       }
 
 
+
       const data = await res.json();
+
 
 
       const aiResponse =
         data.response ||
         "ThorAI no devolvió respuesta.";
+
 
 
       setMessages([
@@ -202,13 +238,15 @@ export default function HomePage() {
       ]);
 
 
-      // Solo habla cuando viene del micrófono
+
       if (fromVoice) {
         speak(aiResponse);
       }
 
 
+
     } catch (error) {
+
 
       setMessages([
         ...newMessages,
@@ -219,8 +257,11 @@ export default function HomePage() {
             String(error),
         },
       ]);
+
     }
   }
+
+
 
 
   return (
@@ -257,6 +298,7 @@ export default function HomePage() {
         </h1>
 
 
+
         <div
           style={{
             height: "500px",
@@ -267,48 +309,61 @@ export default function HomePage() {
           }}
         >
 
-          {messages.map((msg, index) => (
-            <div
-              key={index}
-              style={{
-                marginBottom: "15px",
-                textAlign:
-                  msg.role === "user"
-                    ? "right"
-                    : "left",
-              }}
-            >
+          {messages.map(
+            (msg, index) => (
 
-              <span
+              <div
+                key={index}
                 style={{
-                  display: "inline-block",
-                  padding: "15px",
-                  borderRadius: "15px",
-                  background:
+                  marginBottom: "15px",
+                  textAlign:
                     msg.role === "user"
-                      ? "#2563eb"
-                      : "#334155",
-                  color: "white",
-                  maxWidth: "80%",
-                  fontSize: "18px",
-                  whiteSpace: "pre-wrap",
+                      ? "right"
+                      : "left",
                 }}
               >
 
-                {msg.role === "assistant" ? (
-                  <ReactMarkdown>
-                    {msg.content}
-                  </ReactMarkdown>
-                ) : (
-                  msg.content
-                )}
+                <span
+                  style={{
+                    display:
+                      "inline-block",
+                    padding: "15px",
+                    borderRadius:
+                      "15px",
+                    background:
+                      msg.role === "user"
+                        ? "#2563eb"
+                        : "#334155",
+                    color: "white",
+                    maxWidth: "80%",
+                    fontSize: "18px",
+                    whiteSpace:
+                      "pre-wrap",
+                  }}
+                >
 
-              </span>
+                  {msg.role === "assistant" ? (
 
-            </div>
-          ))}
+                    <ReactMarkdown>
+                      {msg.content}
+                    </ReactMarkdown>
+
+                  ) : (
+
+                    msg.content
+
+                  )}
+
+                </span>
+
+              </div>
+
+            )
+          )}
 
         </div>
+
+
 
 
         <textarea
@@ -316,16 +371,24 @@ export default function HomePage() {
           onChange={(e) =>
             setText(e.target.value)
           }
+
           onKeyDown={(e) => {
+
             if (
               e.key === "Enter" &&
               !e.shiftKey
             ) {
+
               e.preventDefault();
+
               askAI(undefined, false);
+
             }
+
           }}
+
           placeholder="Escribe un mensaje..."
+
           style={{
             width: "100%",
             height: "100px",
@@ -334,7 +397,10 @@ export default function HomePage() {
             fontSize: "20px",
             resize: "none",
           }}
+
         />
+
+
 
 
         <button
@@ -358,10 +424,13 @@ export default function HomePage() {
         </button>
 
 
+
+
         <button
           onClick={() =>
             askAI(undefined, false)
           }
+
           style={{
             padding: "15px",
             borderRadius: "10px",
@@ -374,6 +443,7 @@ export default function HomePage() {
         >
           Enviar ⚡
         </button>
+
 
       </div>
 
