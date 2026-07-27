@@ -26,6 +26,7 @@ export default function HomePage() {
   const [sourceLanguage, setSourceLanguage] = useState("auto");
   const [targetLanguage, setTargetLanguage] = useState("en");
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
 
   function startListening() {
     const SpeechRecognition =
@@ -155,11 +156,36 @@ export default function HomePage() {
     utterance.rate = 1;
     utterance.pitch = 1;
     utterance.volume = 1;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      setIsPaused(false);
+    };
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      setIsPaused(false);
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      setIsPaused(false);
+    };
+    utterance.onpause = () => setIsPaused(true);
+    utterance.onresume = () => setIsPaused(false);
 
     window.speechSynthesis.speak(utterance);
+  }
+
+  function pausePlayback() {
+    if (!window.speechSynthesis) return;
+
+    window.speechSynthesis.pause();
+    setIsPaused(true);
+  }
+
+  function resumePlayback() {
+    if (!window.speechSynthesis) return;
+
+    window.speechSynthesis.resume();
+    setIsPaused(false);
   }
 
   function stopPlayback() {
@@ -167,6 +193,7 @@ export default function HomePage() {
 
     window.speechSynthesis.cancel();
     setIsSpeaking(false);
+    setIsPaused(false);
   }
 
   function playTranslatedResult() {
@@ -309,6 +336,8 @@ export default function HomePage() {
       translatedText !== "Translating..." &&
       !translatedText.startsWith("Error:")
   );
+
+  const showAudioControls = mode === "translation" && hasTranslationToPlay;
 
   return (
     <main
@@ -545,40 +574,70 @@ export default function HomePage() {
                 }}
               />
             </label>
-            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-              <button
-                onClick={playTranslatedResult}
-                disabled={!hasTranslationToPlay}
-                title="Play translated text"
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: "10px",
-                  border: "1px solid #475569",
-                  background: hasTranslationToPlay ? "#16a34a" : "#334155",
-                  color: "white",
-                  cursor: hasTranslationToPlay ? "pointer" : "not-allowed",
-                  opacity: hasTranslationToPlay ? 1 : 0.7,
-                }}
-              >
-                ▶️ Play
-              </button>
-              <button
-                onClick={stopPlayback}
-                disabled={!isSpeaking}
-                title="Stop playback"
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: "10px",
-                  border: "1px solid #475569",
-                  background: isSpeaking ? "#dc2626" : "#334155",
-                  color: "white",
-                  cursor: isSpeaking ? "pointer" : "not-allowed",
-                  opacity: isSpeaking ? 1 : 0.7,
-                }}
-              >
-                ⏹️ Stop
-              </button>
-            </div>
+            {showAudioControls && (
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <button
+                  onClick={playTranslatedResult}
+                  title="Play translated text"
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: "10px",
+                    border: "1px solid #475569",
+                    background: "#16a34a",
+                    color: "white",
+                    cursor: "pointer",
+                  }}
+                >
+                  ▶️ Play
+                </button>
+                <button
+                  onClick={pausePlayback}
+                  disabled={!isSpeaking || isPaused}
+                  title="Pause playback"
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: "10px",
+                    border: "1px solid #475569",
+                    background: isSpeaking && !isPaused ? "#f59e0b" : "#334155",
+                    color: "white",
+                    cursor: isSpeaking && !isPaused ? "pointer" : "not-allowed",
+                    opacity: isSpeaking && !isPaused ? 1 : 0.7,
+                  }}
+                >
+                  ⏸️ Pause
+                </button>
+                <button
+                  onClick={resumePlayback}
+                  disabled={!isPaused}
+                  title="Resume playback"
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: "10px",
+                    border: "1px solid #475569",
+                    background: isPaused ? "#3b82f6" : "#334155",
+                    color: "white",
+                    cursor: isPaused ? "pointer" : "not-allowed",
+                    opacity: isPaused ? 1 : 0.7,
+                  }}
+                >
+                  ▶️ Resume
+                </button>
+                <button
+                  onClick={stopPlayback}
+                  title="Stop playback"
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: "10px",
+                    border: "1px solid #475569",
+                    background: "#dc2626",
+                    color: "white",
+                    cursor: "pointer",
+                  }}
+                >
+                  ⏹️ Stop
+                </button>
+              </div>
+            )}
           </div>
         )}
 
