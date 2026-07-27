@@ -57,7 +57,7 @@ Target language: ${targetLanguage}`;
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       temperature: 0,
-      max_tokens: 300,
+      max_tokens: translationMode ? 400 : 1400,
       messages: [
         {
           role: "system",
@@ -114,6 +114,8 @@ Formatting rules:
 - Use normal text and paragraphs.
 - If you need a list, use hyphens (-) or numbered lists.
 - Keep answers clean and natural.
+- Keep normal conversations concise.
+- When the user asks for a detailed explanation, provide a complete answer. Responses can be long (up to around 1000 words) when necessary. Do not artificially shorten useful information.
 
 Response style:
 ${styleInstruction}
