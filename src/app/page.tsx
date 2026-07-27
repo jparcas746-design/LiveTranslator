@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
 
 type Message = {
   role: "user" | "assistant";
@@ -57,6 +58,7 @@ export default function HomePage() {
             "ThorAI no devolvió ninguna respuesta.",
         },
       ]);
+
     } catch (error) {
       console.error("ERROR DEL CHAT:", error);
 
@@ -136,7 +138,13 @@ export default function HomePage() {
                   whiteSpace: "pre-wrap",
                 }}
               >
-                {msg.content}
+                {msg.role === "assistant" ? (
+                  <ReactMarkdown>
+                    {msg.content}
+                  </ReactMarkdown>
+                ) : (
+                  msg.content
+                )}
               </span>
             </div>
           ))}
@@ -144,9 +152,14 @@ export default function HomePage() {
 
         <textarea
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) =>
+            setText(e.target.value)
+          }
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey
+            ) {
               e.preventDefault();
               askAI();
             }
