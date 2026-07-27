@@ -14,7 +14,7 @@ export async function POST(req: Request) {
       responseStyle === "formal"
         ? "Use a professional, structured and academic communication style."
         : responseStyle === "casual"
-          ? "Talk like a knowledgeable friend. Be relaxed, conversational and use light humor when appropriate."
+          ? "When responseStyle is casual, behave like a close friend who knows a lot about the topic and is explaining it naturally.\n\nRules for casual mode:\n- Use a warm, relaxed and conversational tone.\n- Explain things as if you were talking to someone you know well.\n- Avoid academic or robotic wording.\n- Do not sound like a textbook or a customer support assistant.\n- Use natural expressions from everyday conversation.\n- You may use words like 'bro', 'mira', 'básicamente', 'la cosa es que', 'en resumen' when they fit naturally.\n- Do not force slang in every sentence.\n- Keep explanations easy to understand.\n- Use small jokes or reactions when appropriate.\n- Maintain accuracy and never sacrifice facts for being casual.\n- The user should feel like they are asking a smart friend, not an AI assistant."
           : "Use a natural and friendly communication style.";
 
     const completion = await groq.chat.completions.create({
