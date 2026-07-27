@@ -44,11 +44,15 @@ export default function HomePage() {
       setListening(false);
     };
 
+    recognition.onerror = () => {
+      setListening(false);
+    };
+
     recognition.onresult = (event: any) => {
       const transcript =
         event.results[0][0].transcript;
 
-      // Envía directamente la voz sin escribirla en la caja
+      // Voz: manda directamente y activa respuesta hablada
       askAI(transcript, true);
     };
 
@@ -68,6 +72,7 @@ export default function HomePage() {
 
     utterance.rate = 1;
     utterance.pitch = 1;
+    utterance.volume = 1;
 
     window.speechSynthesis.speak(utterance);
   }
@@ -111,11 +116,17 @@ export default function HomePage() {
         }),
       });
 
+      if (!res.ok) {
+        throw new Error(
+          `Error del servidor: ${res.status}`
+        );
+      }
+
       const data = await res.json();
 
       const aiResponse =
         data.response ||
-        "ThorAI no respondió.";
+        "ThorAI no devolvió respuesta.";
 
       setMessages([
         ...newMessages,
@@ -125,7 +136,7 @@ export default function HomePage() {
         },
       ]);
 
-      // Solo habla si viene del micrófono
+      // Solo habla cuando viene del micrófono
       if (fromVoice) {
         speak(aiResponse);
       }
@@ -135,7 +146,8 @@ export default function HomePage() {
         ...newMessages,
         {
           role: "assistant",
-          content: "Error: " + String(error),
+          content:
+            "Error: " + String(error),
         },
       ]);
     }
@@ -157,6 +169,9 @@ export default function HomePage() {
           background: "#1e293b",
           borderRadius: "20px",
           padding: "30px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "20px",
         }}
       >
         <h1
@@ -201,6 +216,7 @@ export default function HomePage() {
                   color: "white",
                   maxWidth: "80%",
                   fontSize: "18px",
+                  whiteSpace: "pre-wrap",
                 }}
               >
                 {msg.role === "assistant" ? (
@@ -220,29 +236,38 @@ export default function HomePage() {
           onChange={(e) =>
             setText(e.target.value)
           }
+          onKeyDown={(e) => {
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey
+            ) {
+              e.preventDefault();
+              askAI(undefined, false);
+            }
+          }}
           placeholder="Escribe un mensaje..."
           style={{
             width: "100%",
             height: "100px",
-            marginTop: "20px",
             padding: "15px",
             borderRadius: "10px",
             fontSize: "20px",
+            resize: "none",
           }}
         />
 
         <button
           onClick={startListening}
           style={{
-            width: "100%",
-            marginTop: "15px",
             padding: "15px",
             borderRadius: "10px",
+            border: "none",
             background: listening
               ? "#dc2626"
               : "#16a34a",
             color: "white",
             fontSize: "22px",
+            cursor: "pointer",
           }}
         >
           {listening
@@ -251,15 +276,15 @@ export default function HomePage() {
         </button>
 
         <button
-          onClick={() => askAI()}
+          onClick={() => askAI(undefined, false)}
           style={{
-            width: "100%",
-            marginTop: "15px",
             padding: "15px",
             borderRadius: "10px",
+            border: "none",
             background: "#2563eb",
             color: "white",
             fontSize: "22px",
+            cursor: "pointer",
           }}
         >
           Enviar ⚡
