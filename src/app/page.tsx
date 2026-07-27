@@ -40,34 +40,42 @@ export default function HomePage() {
     { name: "中文", code: "zh-CN" },
     { name: "Nederlands", code: "nl-NL" },
     { name: "Svenska", code: "sv-SE" },
+    { name: "Dansk", code: "da-DK" },
+    { name: "Norsk", code: "nb-NO" },
+    { name: "Suomi", code: "fi-FI" },
+    { name: "Íslenska", code: "is-IS" },
     { name: "Русский", code: "ru-RU" },
   ];
 
-  const languageDisplayMap: Record<string, { flag: string; short: string }> = {
-    "auto": { flag: "🌐", short: "AUTO" },
-    "es-ES": { flag: "🇪🇸", short: "ESP" },
-    "en-US": { flag: "🇬🇧", short: "ENG" },
-    "fr-FR": { flag: "🇫🇷", short: "FRA" },
-    "de-DE": { flag: "🇩🇪", short: "DEU" },
-    "it-IT": { flag: "🇮🇹", short: "ITA" },
-    "pt-PT": { flag: "🇵🇹", short: "PT" },
-    "ja-JP": { flag: "🇯🇵", short: "JPN" },
-    "ko-KR": { flag: "🇰🇷", short: "KOR" },
-    "zh-CN": { flag: "🇨🇳", short: "CHN" },
-    "nl-NL": { flag: "🇳🇱", short: "NLD" },
-    "sv-SE": { flag: "🇸🇪", short: "SWE" },
-    "ru-RU": { flag: "🇷🇺", short: "RUS" },
+  const languageDisplayMap: Record<string, { short: string }> = {
+    "auto": { short: "AUTO" },
+    "es-ES": { short: "ESP" },
+    "en-US": { short: "ENG" },
+    "fr-FR": { short: "FRA" },
+    "de-DE": { short: "DEU" },
+    "it-IT": { short: "ITA" },
+    "pt-PT": { short: "POR" },
+    "ja-JP": { short: "JPN" },
+    "ko-KR": { short: "KOR" },
+    "zh-CN": { short: "CHN" },
+    "nl-NL": { short: "NLD" },
+    "sv-SE": { short: "SWE" },
+    "da-DK": { short: "DAN" },
+    "nb-NO": { short: "NOR" },
+    "fi-FI": { short: "FIN" },
+    "is-IS": { short: "ISL" },
+    "ru-RU": { short: "RUS" },
   };
 
   function getLanguageDisplay(languageCode: string) {
-    return languageDisplayMap[languageCode] || { flag: "🌐", short: "LANG" };
+    return languageDisplayMap[languageCode] || { short: "LANG" };
   }
 
   function getDirectionLabel() {
     const sourceDisplay = getLanguageDisplay(sourceLanguage);
     const targetDisplay = getLanguageDisplay(targetLanguage);
 
-    return `${sourceDisplay.flag} ${sourceDisplay.short} → ${targetDisplay.flag} ${targetDisplay.short}`;
+    return `${sourceDisplay.short} → ${targetDisplay.short}`;
   }
 
   function getSpeechRecognitionLanguage() {
@@ -163,6 +171,18 @@ export default function HomePage() {
       case "sv":
       case "sv-se":
         return "sv-SE";
+      case "da":
+      case "da-dk":
+        return "da-DK";
+      case "nb":
+      case "nb-no":
+        return "nb-NO";
+      case "fi":
+      case "fi-fi":
+        return "fi-FI";
+      case "is":
+      case "is-is":
+        return "is-IS";
       case "ru":
       case "ru-ru":
         return "ru-RU";
@@ -188,6 +208,10 @@ export default function HomePage() {
       "zh": { preferredCodes: ["zh-cn", "zh-hk", "zh-tw", "zh"], fallbackCodes: ["zh"] },
       "nl": { preferredCodes: ["nl-nl", "nl"], fallbackCodes: ["nl"] },
       "sv": { preferredCodes: ["sv-se", "sv"], fallbackCodes: ["sv"] },
+      "da": { preferredCodes: ["da-dk", "da"], fallbackCodes: ["da"] },
+      "nb": { preferredCodes: ["nb-no", "nb"], fallbackCodes: ["nb"] },
+      "fi": { preferredCodes: ["fi-fi", "fi"], fallbackCodes: ["fi"] },
+      "is": { preferredCodes: ["is-is", "is"], fallbackCodes: ["is"] },
       "ru": { preferredCodes: ["ru-ru", "ru"], fallbackCodes: ["ru"] },
     };
 
