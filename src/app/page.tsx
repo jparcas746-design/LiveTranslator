@@ -186,14 +186,18 @@ export default function HomePage() {
           ⚡ ThorAI
         </h1>
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: "10px",
-            flexWrap: "wrap",
-          }}
-        >
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px", alignItems: "center" }}>
+          <div style={{ color: "#e2e8f0", fontSize: "14px", fontWeight: 600, letterSpacing: "0.04em" }}>
+            Response style
+          </div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: "10px",
+              flexWrap: "wrap",
+            }}
+          >
           <button
             onClick={() => setResponseStyle("formal")}
             style={{
@@ -236,6 +240,7 @@ export default function HomePage() {
           >
             🔥 Casual
           </button>
+          </div>
         </div>
 
         <div
