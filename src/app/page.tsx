@@ -21,9 +21,6 @@ export default function HomePage() {
 
     const newMessages = [...messages, userMessage];
 
-    setMessages(newMessages);
-    setText("");
-
     setMessages([
       ...newMessages,
       {
@@ -32,6 +29,8 @@ export default function HomePage() {
       },
     ]);
 
+    setText("");
+
     try {
       const res = await fetch("/api-translate", {
         method: "POST",
@@ -39,7 +38,7 @@ export default function HomePage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          messages: newMessages,
+          text: userMessage.content,
         }),
       });
 
@@ -52,7 +51,10 @@ export default function HomePage() {
           content: data.response || "Ha ocurrido un error.",
         },
       ]);
-    } catch {
+
+    } catch (error) {
+      console.error(error);
+
       setMessages([
         ...newMessages,
         {
