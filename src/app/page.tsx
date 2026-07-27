@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 declare global {
@@ -20,13 +20,18 @@ export default function HomePage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [listening, setListening] = useState(false);
   const [responseStyle, setResponseStyle] = useState<"formal" | "balanced" | "casual">("balanced");
-  const [mode, setMode] = useState<"chat" | "translation">("chat");
+  const [mode, setMode] = useState<"chat" | "translation" | "dictionary">("chat");
   const [sourceText, setSourceText] = useState("");
+  const [dictionaryInput, setDictionaryInput] = useState("");
+  const [dictionaryResult, setDictionaryResult] = useState<string | null>(null);
+  const [dictionaryLoading, setDictionaryLoading] = useState(false);
+  const [dictionaryError, setDictionaryError] = useState<string | null>(null);
   const [translatedText, setTranslatedText] = useState("");
   const [sourceLanguage, setSourceLanguage] = useState("auto");
   const [targetLanguage, setTargetLanguage] = useState("en-US");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const [lastTranslation, setLastTranslation] = useState<{
     originalText: string;
     sourceLanguage: string;
@@ -84,12 +89,32 @@ export default function HomePage() {
     return `${sourceDisplay.short} → ${targetDisplay.short}`;
   }
 
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      currentUtteranceRef.current = null;
+      setIsSpeaking(false);
+      setIsPaused(false);
+    };
+  }, []);
+
   function getSpeechRecognitionLanguage() {
     if (sourceLanguage === "auto") {
       return "";
     }
 
     return getSpeechLanguageCode(sourceLanguage);
+  }
+
+  function stopSpeechAndReset() {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    currentUtteranceRef.current = null;
+    setIsSpeaking(false);
+    setIsPaused(false);
   }
 
   function startListening() {
@@ -272,10 +297,11 @@ export default function HomePage() {
   function speak(text: string, languageCode?: string) {
     if (!window.speechSynthesis || !text?.trim()) return;
 
-    window.speechSynthesis.cancel();
+    stopSpeechAndReset();
 
     const utterance =
       new SpeechSynthesisUtterance(text);
+    currentUtteranceRef.current = utterance;
 
     const resolvedLanguage = languageCode || navigator.language || "es-ES";
     utterance.lang = resolvedLanguage;
@@ -293,12 +319,10 @@ export default function HomePage() {
       setIsPaused(false);
     };
     utterance.onend = () => {
-      setIsSpeaking(false);
-      setIsPaused(false);
+      stopSpeechAndReset();
     };
     utterance.onerror = () => {
-      setIsSpeaking(false);
-      setIsPaused(false);
+      stopSpeechAndReset();
     };
     utterance.onpause = () => setIsPaused(true);
     utterance.onresume = () => setIsPaused(false);
@@ -323,9 +347,7 @@ export default function HomePage() {
   function stopPlayback() {
     if (!window.speechSynthesis) return;
 
-    window.speechSynthesis.cancel();
-    setIsSpeaking(false);
-    setIsPaused(false);
+    stopSpeechAndReset();
   }
 
   function playTranslatedResult() {
@@ -448,6 +470,52 @@ export default function HomePage() {
       speak(translation, translationLanguage);
     } catch (error) {
       setTranslatedText("Error: " + String(error));
+    }
+  }
+
+  async function handleDictionaryLookup() {
+    const trimmed = dictionaryInput.trim();
+
+    if (!trimmed) return;
+
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    if (words.length !== 1) {
+      setDictionaryError("Dictionary Mode is intended for individual words. Please use Translation Mode for complete sentences.");
+      setDictionaryResult(null);
+      return;
+    }
+
+    const normalizedWord = words[0].trim();
+    setDictionaryLoading(true);
+    setDictionaryError(null);
+    setDictionaryResult(null);
+
+    try {
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: normalizedWord,
+          responseStyle,
+          translationMode: false,
+          dictionaryMode: true,
+          sourceLanguage: "es-ES",
+          targetLanguage: "en-US",
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Error del servidor: ${res.status}`);
+      }
+
+      const data = await res.json();
+      setDictionaryResult(data.response || "No dictionary entry returned.");
+    } catch (error) {
+      setDictionaryError("Error: " + String(error));
+    } finally {
+      setDictionaryLoading(false);
     }
   }
 
@@ -623,7 +691,10 @@ export default function HomePage() {
             </button>
             {mode === "translation" ? (
               <button
-                onClick={() => setMode("chat")}
+                onClick={() => {
+                  stopSpeechAndReset();
+                  setMode("chat");
+                }}
                 title="Return to assistant mode"
                 aria-label="Return to assistant mode"
                 style={{
@@ -658,6 +729,26 @@ export default function HomePage() {
                 ⇄
               </button>
             )}
+            <button
+              onClick={() => {
+                stopSpeechAndReset();
+                setMode("dictionary");
+              }}
+              title="Switch to dictionary mode"
+              aria-label="Switch to dictionary mode"
+              style={{
+                padding: "10px 15px",
+                borderRadius: "10px",
+                border: "1px solid #475569",
+                background: "#334155",
+                color: "white",
+                cursor: "pointer",
+                fontSize: "18px",
+                lineHeight: 1,
+              }}
+            >
+              📖
+            </button>
           </div>
         </div>
 
@@ -708,6 +799,97 @@ export default function HomePage() {
               </div>
             ))}
           </div>
+        ) : mode === "dictionary" ? (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "15px",
+              padding: "15px",
+              background: "#0f172a",
+              borderRadius: "15px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+              <h2 style={{ color: "white", margin: 0, fontSize: "24px" }}>
+                Dictionary
+              </h2>
+              <button
+                onClick={() => {
+                  stopSpeechAndReset();
+                  setMode("chat");
+                }}
+                title="Return to assistant mode"
+                aria-label="Return to assistant mode"
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "10px",
+                  border: "1px solid #475569",
+                  background: "#334155",
+                  color: "white",
+                  cursor: "pointer",
+                  fontSize: "18px",
+                  lineHeight: 1,
+                }}
+              >
+                ←
+              </button>
+            </div>
+            <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
+              Search a word
+              <input
+                value={dictionaryInput}
+                onChange={(e) => setDictionaryInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleDictionaryLookup();
+                  }
+                }}
+                placeholder="house"
+                style={{
+                  width: "100%",
+                  marginTop: "8px",
+                  padding: "12px",
+                  borderRadius: "10px",
+                  fontSize: "18px",
+                }}
+              />
+            </label>
+            <button
+              onClick={handleDictionaryLookup}
+              disabled={dictionaryLoading}
+              style={{
+                padding: "10px 14px",
+                borderRadius: "10px",
+                border: "1px solid #475569",
+                background: dictionaryLoading ? "#475569" : "#2563eb",
+                color: "white",
+                cursor: dictionaryLoading ? "not-allowed" : "pointer",
+                fontSize: "15px",
+                fontWeight: 600,
+              }}
+            >
+              {dictionaryLoading ? "Searching..." : "Look up"}
+            </button>
+            {dictionaryError ? (
+              <div style={{ color: "#fca5a5", whiteSpace: "pre-wrap" }}>{dictionaryError}</div>
+            ) : null}
+            {dictionaryResult ? (
+              <div
+                style={{
+                  padding: "14px",
+                  borderRadius: "10px",
+                  background: "#1f2937",
+                  color: "#f8fafc",
+                  whiteSpace: "pre-wrap",
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {dictionaryResult}
+              </div>
+            ) : null}
+          </div>
         ) : (
           <div
             style={{
@@ -724,7 +906,10 @@ export default function HomePage() {
                 Translation
               </h2>
               <button
-                onClick={() => setMode("chat")}
+                onClick={() => {
+                  stopSpeechAndReset();
+                  setMode("chat");
+                }}
                 title="Return to assistant mode"
                 aria-label="Return to assistant mode"
                 style={{

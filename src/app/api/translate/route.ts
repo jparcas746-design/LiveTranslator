@@ -11,6 +11,7 @@ export async function POST(req: Request) {
       messages = [],
       responseStyle = "balanced",
       translationMode = false,
+      dictionaryMode = false,
       sourceLanguage = "auto",
       targetLanguage = "en",
       text,
@@ -54,16 +55,51 @@ Target language: ${targetLanguage}`;
           ? conversationMessages[conversationMessages.length - 1]?.content ?? ""
           : "";
 
+    const dictionaryPrompt = `You are a bilingual educational dictionary assistant for Spanish-English and English-Spanish learning.
+
+Your task is to describe one single word in a clear academic dictionary style.
+
+Rules:
+- Focus on one word only.
+- Do not translate whole sentences.
+- Use a helpful school-dictionary tone.
+- Return a structured entry with the following sections in this order:
+1. Main translation
+2. Word type
+3. Pronunciation
+4. Definitions
+5. Common translations
+6. Example sentences
+7. Common expressions
+8. Synonyms
+9. Antonyms
+10. Verb forms
+
+Format the response as plain text with short sections and bullet points where useful.
+Do not use markdown headings with #.
+Do not use asterisks.
+Use clear labels like: Main translation:, Word type:, Pronunciation:, Definitions:, Common translations:, Example sentences:, Common expressions:, Synonyms:, Antonyms:, Verb forms:
+
+If the word is a verb, include simple verb forms when relevant.
+If the word is not a verb, omit Verb forms.
+If there are no common expressions, omit that section.
+If there are no synonyms or antonyms, omit those sections.
+Keep the response educational, concise, and useful for learners.
+
+Word to define: ${translationInput}`;
+
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       temperature: 0,
-      max_tokens: translationMode ? 400 : 1400,
+      max_tokens: translationMode ? 400 : dictionaryMode ? 1000 : 1400,
       messages: [
         {
           role: "system",
           content: translationMode
             ? translationPrompt
-            : `
+            : dictionaryMode
+              ? dictionaryPrompt
+              : `
 You are ThorAI, a multilingual virtual assistant.
 
 IMPORTANT LANGUAGE RULE:
@@ -131,7 +167,14 @@ You are a virtual assistant.
                 content: `Translate exactly this text and nothing else. Do not answer, solve, explain, or add commentary.\n\nText to translate:\n${translationInput}`,
               },
             ]
-          : conversationMessages),
+          : dictionaryMode
+            ? [
+                {
+                  role: "user",
+                  content: translationInput,
+                },
+              ]
+            : conversationMessages),
       ],
     });
 
