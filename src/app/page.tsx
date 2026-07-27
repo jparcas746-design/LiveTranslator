@@ -32,7 +32,7 @@ export default function HomePage() {
     setText("");
 
     try {
-      const res = await fetch("/api-translate", {
+      const res = await fetch("/api/translate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -43,9 +43,7 @@ export default function HomePage() {
       });
 
       if (!res.ok) {
-        throw new Error(
-          `Error del servidor: ${res.status}`
-        );
+        throw new Error(`Error del servidor: ${res.status}`);
       }
 
       const data = await res.json();
@@ -59,7 +57,6 @@ export default function HomePage() {
             "ThorAI no devolvió ninguna respuesta.",
         },
       ]);
-
     } catch (error) {
       console.error("ERROR DEL CHAT:", error);
 
@@ -67,8 +64,7 @@ export default function HomePage() {
         ...newMessages,
         {
           role: "assistant",
-          content:
-            "Error: " + String(error),
+          content: "Error: " + String(error),
         },
       ]);
     }
@@ -148,14 +144,9 @@ export default function HomePage() {
 
         <textarea
           value={text}
-          onChange={(e) =>
-            setText(e.target.value)
-          }
+          onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              !e.shiftKey
-            ) {
+            if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               askAI();
             }
