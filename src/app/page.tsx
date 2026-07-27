@@ -23,6 +23,8 @@ export default function HomePage() {
   const [mode, setMode] = useState<"chat" | "translation">("chat");
   const [sourceText, setSourceText] = useState("");
   const [translatedText, setTranslatedText] = useState("Translation preview will appear here.");
+  const [sourceLanguage, setSourceLanguage] = useState("auto");
+  const [targetLanguage, setTargetLanguage] = useState("en");
 
   function startListening() {
     const SpeechRecognition =
@@ -57,8 +59,7 @@ export default function HomePage() {
         event.results[0][0].transcript;
 
       if (mode === "translation") {
-        setSourceText(transcript);
-        setTranslatedText(transcript);
+        handleTranslationSubmit(transcript, true);
       } else {
         askAI(transcript, true);
       }
@@ -85,12 +86,49 @@ export default function HomePage() {
     window.speechSynthesis.speak(utterance);
   }
 
-  function handleTranslationSubmit() {
-    const trimmed = sourceText.trim();
+  async function handleTranslationSubmit(textOverride?: string, fromVoice = false) {
+    const trimmed = (textOverride ?? sourceText).trim();
 
     if (!trimmed) return;
 
-    setTranslatedText(trimmed);
+    setSourceText(trimmed);
+    setTranslatedText("Translating...");
+
+    try {
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "user",
+              content: trimmed,
+            },
+          ],
+          responseStyle: responseStyle,
+          translationMode: true,
+          sourceLanguage,
+          targetLanguage,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Error del servidor: ${res.status}`);
+      }
+
+      const data = await res.json();
+      const translation = data.response || "No translation returned.";
+
+      setTranslatedText(translation);
+
+      if (fromVoice) {
+        speak(translation);
+      }
+    } catch (error) {
+      setTranslatedText("Error: " + String(error));
+    }
   }
 
   async function askAI(
@@ -340,7 +378,11 @@ export default function HomePage() {
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
               <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
                 Source language
-                <select defaultValue="auto" style={{ display: "block", marginTop: "6px", padding: "8px", borderRadius: "8px" }}>
+                <select
+                  value={sourceLanguage}
+                  onChange={(e) => setSourceLanguage(e.target.value)}
+                  style={{ display: "block", marginTop: "6px", padding: "8px", borderRadius: "8px" }}
+                >
                   <option value="auto">Auto Detect</option>
                   <option value="en">English</option>
                   <option value="es">Spanish</option>
@@ -348,7 +390,11 @@ export default function HomePage() {
               </label>
               <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
                 Target language
-                <select defaultValue="en" style={{ display: "block", marginTop: "6px", padding: "8px", borderRadius: "8px" }}>
+                <select
+                  value={targetLanguage}
+                  onChange={(e) => setTargetLanguage(e.target.value)}
+                  style={{ display: "block", marginTop: "6px", padding: "8px", borderRadius: "8px" }}
+                >
                   <option value="en">English</option>
                   <option value="es">Spanish</option>
                   <option value="fr">French</option>

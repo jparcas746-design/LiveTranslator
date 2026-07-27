@@ -7,7 +7,13 @@ const groq = new Groq({
 
 export async function POST(req: Request) {
   try {
-    const { messages = [], responseStyle = "balanced" } = await req.json();
+    const {
+      messages = [],
+      responseStyle = "balanced",
+      translationMode = false,
+      sourceLanguage = "auto",
+      targetLanguage = "en",
+    } = await req.json();
     const conversationMessages = Array.isArray(messages) ? messages : [];
 
     const styleInstruction =
@@ -17,13 +23,35 @@ export async function POST(req: Request) {
           ? "When responseStyle is casual, ThorAI should sound like a close friend explaining something interesting.\n\nImagine you are explaining the topic to a friend sitting next to you, not writing an article.\n\nStyle rules:\n- Start naturally when appropriate with expressions like:\n  'Mira,'\n  'Básicamente,'\n  'La cosa es que...'\n  'En pocas palabras...'\n  'Te cuento...'\n\n- Avoid starting every answer like:\n  'X was a...'\n  'According to history...'\n  'The following is...'\n\n- Prefer storytelling and explanations over encyclopedia summaries.\n\n- React naturally to interesting facts:\n  'Lo curioso es que...'\n  'Aquí viene la parte interesante...'\n  'Lo más loco de esto es...'\n\n- Use light humor occasionally when it fits.\n\n- Use casual language, but remain intelligent and accurate.\n\n- Do not overuse slang."
           : "Use a natural and friendly communication style.";
 
+    const translationPrompt = `You are ThorAI Translation Mode.
+
+Your only task is translation.
+
+Rules:
+- Detect the source language automatically if sourceLanguage is auto.
+- Translate the user's text into the target language.
+- Return ONLY the translated text.
+- Do not explain.
+- Do not answer questions.
+- Do not add extra information.
+- Preserve the meaning and natural expressions of the original text.
+
+Source language: ${sourceLanguage === "auto" ? "auto-detected" : sourceLanguage}
+Target language: ${targetLanguage}`;
+
+    const lastUserMessage = conversationMessages.length > 0
+      ? conversationMessages[conversationMessages.length - 1]
+      : null;
+
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
 
       messages: [
         {
           role: "system",
-          content: `
+          content: translationMode
+            ? translationPrompt
+            : `
 You are ThorAI, a multilingual virtual assistant.
 
 IMPORTANT LANGUAGE RULE:
@@ -82,7 +110,9 @@ Never say you are a translator.
 You are a virtual assistant.
 `,
         },
-        ...conversationMessages,
+        ...(translationMode
+          ? [{ role: "user", content: lastUserMessage?.content ?? "" }]
+          : conversationMessages),
       ],
     });
 
