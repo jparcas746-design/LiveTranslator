@@ -4,6 +4,8 @@ import { requireAdmin } from "@/thor/utils/adminAuth";
 import { toApiError } from "@/thor/utils/httpErrors";
 import type { SourceType } from "@/thor/knowledge/types";
 
+export const runtime = "nodejs";
+
 function resolveSourceType(fileName: string): SourceType | null {
   const lower = fileName.toLowerCase();
   if (lower.endsWith(".pdf")) return "pdf";
@@ -13,7 +15,12 @@ function resolveSourceType(fileName: string): SourceType | null {
 }
 
 export async function GET(request: Request) {
-  console.log("ADMIN_KNOWLEDGE_GET_START", { time: new Date().toISOString() });
+  console.log("ADMIN_KNOWLEDGE_GET_START", {
+    time: new Date().toISOString(),
+    method: request.method,
+    path: new URL(request.url).pathname,
+    accept: request.headers.get("accept") || "",
+  });
   const denied = requireAdmin(request);
   if (denied) {
     console.warn("ADMIN_KNOWLEDGE_GET_DENIED", { time: new Date().toISOString() });
@@ -42,7 +49,14 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  console.log("ADMIN_KNOWLEDGE_POST_START", { time: new Date().toISOString() });
+  console.log("ADMIN_KNOWLEDGE_POST_START", {
+    time: new Date().toISOString(),
+    method: request.method,
+    path: new URL(request.url).pathname,
+    contentType: request.headers.get("content-type") || "",
+    contentLength: request.headers.get("content-length") || "",
+    userAgent: request.headers.get("user-agent") || "",
+  });
   const denied = requireAdmin(request);
   if (denied) {
     console.warn("ADMIN_KNOWLEDGE_POST_DENIED", { time: new Date().toISOString() });
@@ -60,6 +74,11 @@ export async function POST(request: Request) {
 
     const sourceType = resolveSourceType(file.name);
     if (!sourceType) {
+      console.warn("ADMIN_KNOWLEDGE_POST_REJECTED_FILE_TYPE", {
+        name: file.name,
+        category,
+        mimeType: file.type || "",
+      });
       return NextResponse.json(
         { error: "Only PDF, TXT and Word (.doc/.docx) files are accepted" },
         { status: 400 }
@@ -83,6 +102,8 @@ export async function POST(request: Request) {
 
     console.log("ADMIN_KNOWLEDGE_POST_OK", {
       name: file.name,
+      size: file.size,
+      mimeType: file.type || "",
       sourceType,
       chunkCount: result.chunkCount,
       time: new Date().toISOString(),
@@ -90,10 +111,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ result }, { status: 201 });
   } catch (error) {
+    const mapped = toApiError(error);
     console.error("ADMIN_KNOWLEDGE_POST_ERROR", {
-      error: toApiError(error),
+      error: mapped,
+      stack: error instanceof Error ? error.stack : undefined,
       time: new Date().toISOString(),
     });
-    return NextResponse.json({ error: toApiError(error) }, { status: 503 });
+    return NextResponse.json({ error: mapped }, { status: 503 });
   }
 }

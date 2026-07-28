@@ -3,6 +3,8 @@ import { getKnowledgeEngine } from "@/thor/brain/knowledgeEngine";
 import { requireAdmin } from "@/thor/utils/adminAuth";
 import { toApiError } from "@/thor/utils/httpErrors";
 
+export const runtime = "nodejs";
+
 export async function GET(request: Request) {
   console.log("ADMIN_KNOWLEDGE_SEARCH_START", { time: new Date().toISOString() });
 

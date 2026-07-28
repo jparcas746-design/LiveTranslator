@@ -3,6 +3,8 @@ import { getKnowledgeEngine } from "@/thor/brain/knowledgeEngine";
 import { requireAdmin } from "@/thor/utils/adminAuth";
 import { toApiError } from "@/thor/utils/httpErrors";
 
+export const runtime = "nodejs";
+
 type RouteContext = {
   params: Promise<{ documentId: string }>;
 };

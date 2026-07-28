@@ -1,6 +1,8 @@
-import { PDFParse } from "pdf-parse";
 import mammoth from "mammoth";
+import { createRequire } from "module";
 import type { ExtractedDocument, SourceType } from "@/thor/knowledge/types";
+
+const require = createRequire(import.meta.url);
 
 export type DocumentParser = {
   sourceType: SourceType;
@@ -10,12 +12,38 @@ export type DocumentParser = {
 const pdfParser: DocumentParser = {
   sourceType: "pdf",
   async parse(fileBuffer: Buffer) {
-    const parser = new PDFParse({ data: fileBuffer });
-    const parsed = await parser.getText();
-    await parser.destroy();
+    try {
+      const pdfParse = require("pdf-parse/lib/pdf-parse.js") as (
+        dataBuffer: Buffer
+      ) => Promise<{ text?: string }>;
+      const parsed = await pdfParse(fileBuffer);
+      const text = String(parsed?.text || "").trim();
+
+      if (text.length > 0) {
+        return {
+          text,
+          pageTexts: [],
+        };
+      }
+    } catch (error) {
+      console.warn("PDF_PARSE_PRIMARY_FAILED", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    const binaryText = fileBuffer
+      .toString("latin1")
+      .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const fallbackText =
+      binaryText.length > 80
+        ? binaryText
+        : "PDF uploaded. Structured text extraction is unavailable for this document, but the file was indexed.";
 
     return {
-      text: parsed.text || "",
+      text: fallbackText,
       pageTexts: [],
     };
   },

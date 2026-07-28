@@ -74,7 +74,13 @@ function uploadWithProgress(
   url: string,
   formData: FormData,
   onProgress: (percent: number) => void
-): Promise<{ ok: boolean; status: number; data?: unknown; error?: string }> {
+): Promise<{
+  ok: boolean;
+  status: number;
+  data?: unknown;
+  error?: string;
+  details?: { contentType: string; preview: string };
+}> {
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
 
@@ -100,6 +106,10 @@ function uploadWithProgress(
           ok: false,
           status: xhr.status,
           error: `Expected JSON but received '${contentType || "unknown"}'`,
+          details: {
+            contentType,
+            preview: bodyText.replace(/\s+/g, " ").slice(0, 240),
+          },
         });
         return;
       }
@@ -116,7 +126,15 @@ function uploadWithProgress(
           resolve({ ok: false, status: xhr.status, error: message });
         }
       } catch {
-        resolve({ ok: false, status: xhr.status, error: "Invalid JSON response from server" });
+        resolve({
+          ok: false,
+          status: xhr.status,
+          error: "Invalid JSON response from server",
+          details: {
+            contentType,
+            preview: bodyText.replace(/\s+/g, " ").slice(0, 240),
+          },
+        });
       }
     });
 
@@ -262,6 +280,14 @@ export default function AdminKnowledgePage() {
     form.set("file", file);
     form.set("category", category || "general");
 
+    console.log("ADMIN_UPLOAD_START", {
+      endpoint: "/api/admin/knowledge/documents",
+      fileName: file.name,
+      fileType: file.type || "unknown",
+      fileSize: file.size,
+      category: category || "general",
+    });
+
     const uploadResult = await uploadWithProgress("/api/admin/knowledge/documents", form, (value) => {
       setUploadProgress(value);
       if (value < 100) {
@@ -273,6 +299,9 @@ export default function AdminKnowledgePage() {
       console.error("ADMIN_UPLOAD_ERROR", uploadResult);
       if (uploadResult.status === 401) {
         setAuthState("locked");
+      }
+      if (uploadResult.details) {
+        console.error("ADMIN_UPLOAD_ERROR_DETAILS", uploadResult.details);
       }
       setStatusText(uploadResult.error || "Error al subir el archivo");
       setUploading(false);
