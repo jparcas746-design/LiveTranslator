@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "knowledge:db:init": "node scripts/knowledge-db-init.cjs",
+    "knowledge:db:check": "node -e \"const c=(process.env.THOR_KNOWLEDGE_DB_DSN||process.env.POSTGRES_URL||process.env.DATABASE_URL||'').trim(); if(!c){console.error('Missing THOR_KNOWLEDGE_DB_DSN/POSTGRES_URL/DATABASE_URL'); process.exit(1);} console.log('Knowledge DB connection string detected.');\""
   },
   "dependencies": {
     "@google/genai": "^2.13.0",
