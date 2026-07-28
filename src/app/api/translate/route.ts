@@ -6,29 +6,98 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
+function formatError(error: any) {
+  if (!error) {
+    return { message: "Unknown error" };
+  }
+
+  const formatted: any = {
+    message: error.message ?? String(error),
+    name: error.name,
+    stack: error.stack,
+  };
+
+  if (typeof error.status !== "undefined") {
+    formatted.status = error.status;
+  }
+  if (typeof error.code !== "undefined") {
+    formatted.code = error.code;
+  }
+  if (error.response) {
+    formatted.response = {
+      status: error.response.status,
+      statusText: error.response.statusText,
+      body: error.response.body ?? error.response.data ?? error.response,
+    };
+  }
+  if (error.body) {
+    formatted.body = error.body;
+  }
+
+  return formatted;
+}
+
 /**
  * Helper function to search the web using Tavily API
  */
 async function searchWeb(query: string) {
+  console.log("TAVILY: starting search", {
+    query,
+    hasApiKey: !!process.env.TAVILY_API_KEY,
+  });
+
+  if (!process.env.TAVILY_API_KEY) {
+    console.warn("TAVILY: missing API key, returning empty search context");
+    return "";
+  }
+
   try {
     const response = await fetch("https://api.tavily.com/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_key: process.env.TAVILY_API_KEY,
-        query: query,
+        query,
         search_depth: "smart",
         max_results: 5,
       }),
     });
-    const data = await response.json();
-    if (!data.results) return "";
-    
+
+    const text = await response.text();
+    let data: any = null;
+
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch (parseError) {
+      console.warn("TAVILY: could not parse JSON response", {
+        parseError: formatError(parseError),
+        body: text,
+      });
+    }
+
+    if (!response.ok) {
+      console.error("TAVILY: non-ok response", {
+        status: response.status,
+        statusText: response.statusText,
+        body: data ?? text,
+      });
+      return "";
+    }
+
+    if (!data?.results) {
+      console.log("TAVILY: no results returned");
+      return "";
+    }
+
+    console.log("TAVILY: search succeeded", {
+      results: data.results.length,
+    });
+
     return data.results
       .map((r: any) => `Source: ${r.title}\nContent: ${r.content}\nURL: ${r.url}`)
       .join("\n\n");
   } catch (error) {
-    console.error("TAVILY ERROR:", error);
+    console.error("TAVILY ERROR:", formatError(error));
     return "";
   }
 }
@@ -37,27 +106,32 @@ async function searchWeb(query: string) {
  * Función auxiliar para realizar el fallback a Gemini utilizando @google/genai@2.13.0
  */
 async function askGemini(systemPrompt: string, messages: any[], maxTokens: number) {
+  const geminiApiKey = process.env.GEMINI_API_KEY;
+  console.log("GEMINI: starting request", {
+    hasApiKey: !!geminiApiKey,
+    model: "gemini-3.5-flash",
+    maxTokens,
+    messageCount: messages.length,
+  });
+
+  if (!geminiApiKey) {
+    const missingKeyError = new Error("GEMINI_API_KEY missing in environment");
+    console.error("GEMINI ERROR:", formatError(missingKeyError));
+    throw missingKeyError;
+  }
+
+  const client = new GoogleGenAI({
+    apiKey: geminiApiKey,
+  });
+
+  const formattedContents = messages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+
   try {
-    console.log("Using Gemini");
-    
-    // Inicialización oficial según la documentación de @google/genai@2.13.0
-    const client = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY || "",
-    });
-    console.log(
-      "GEMINI KEY:",
-      process.env.GEMINI_API_KEY ? "Existe" : "NO EXISTE"
-    );
-
-    // Mapeo de roles para Gemini (user / model)
-    const formattedContents = messages.map(m => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content }]
-    }));
-
-    // Llamada oficial de la API @google/genai
     const result = await client.models.generateContent({
-      model: "gemini-3.5-flash", // Compatible con el nuevo SDK
+      model: "gemini-3.5-flash",
       contents: formattedContents,
       config: {
         systemInstruction: systemPrompt,
@@ -66,15 +140,30 @@ async function askGemini(systemPrompt: string, messages: any[], maxTokens: numbe
       },
     });
 
-    // En @google/genai el resultado se obtiene llamando a .text()
+    console.log("GEMINI: response received", {
+      textLength: result?.text?.length ?? 0,
+    });
+
+    if (!result?.text) {
+      console.warn("GEMINI: generateContent returned no text", {
+        result,
+      });
+    }
+
     return result.text ?? "";
   } catch (error) {
-    console.error("GEMINI ERROR:", error);
+    console.error("GEMINI ERROR:", formatError(error));
     throw error;
   }
 }
 
 export async function POST(req: Request) {
+  const requestId = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  console.log("TRANSLATE REQUEST START", { requestId });
+
   try {
     const {
       messages = [],
@@ -86,8 +175,20 @@ export async function POST(req: Request) {
       targetLanguage = "en",
       text,
     } = await req.json();
-    
+
     const conversationMessages = Array.isArray(messages) ? messages : [];
+
+    console.log("TRANSLATE: request parsed", {
+      requestId,
+      responseStyle,
+      translationMode,
+      dictionaryMode,
+      webSearch,
+      sourceLanguage,
+      targetLanguage,
+      incomingMessages: conversationMessages.length,
+      textLength: typeof text === "string" ? text.length : 0,
+    });
 
     const styleInstruction =
       responseStyle === "formal"
@@ -275,8 +376,14 @@ You are a virtual assistant.
     let response = "";
 
     try {
-      // Intento principal con Groq
-      console.log("Using Groq");
+      console.log("GROQ: starting request", {
+        requestId,
+        keyPresent: !!process.env.GROQ_API_KEY,
+        model: "llama-3.3-70b-versatile",
+        maxTokens,
+        finalMessageCount: finalMessages.length + 1,
+      });
+
       const completion = await groq.chat.completions.create({
         model: "llama-3.3-70b-versatile",
         temperature: 0,
@@ -289,11 +396,38 @@ You are a virtual assistant.
           ...finalMessages,
         ],
       });
-      response = completion.choices[0].message.content ?? "";
-    } catch (error) {
-      // Fallback a Gemini si Groq falla
-      console.log("Groq failed, switching to Gemini");
-      response = await askGemini(systemPrompt, finalMessages, maxTokens);
+
+      response = completion.choices?.[0]?.message?.content ?? "";
+      console.log("GROQ: response success", {
+        requestId,
+        textLength: response.length,
+        choiceCount: completion.choices?.length ?? 0,
+      });
+    } catch (error: any) {
+      const groqDetails = formatError(error);
+      console.error("GROQ ERROR", { requestId, groqDetails });
+      console.log("Groq failed, switching to Gemini", { requestId });
+
+      try {
+        response = await askGemini(systemPrompt, finalMessages, maxTokens);
+        console.log("GEMINI: fallback response success", {
+          requestId,
+          textLength: response.length,
+        });
+      } catch (geminiError: any) {
+        const geminiDetails = formatError(geminiError);
+        console.error("GEMINI FALLBACK FAILED", { requestId, geminiDetails });
+        return NextResponse.json(
+          {
+            error: "Gemini fallback failed",
+            provider: "gemini",
+            details: geminiDetails,
+          },
+          {
+            status: geminiDetails.status ?? 502,
+          }
+        );
+      }
     }
 
     const cleanedResponse = response
@@ -307,13 +441,18 @@ You are a virtual assistant.
       response: cleanedResponse,
     });
   } catch (error) {
-    console.error("ERROR THORAI:", error);
+    const errorDetails = formatError(error);
+    console.error("ERROR THORAI:", {
+      requestId,
+      errorDetails,
+    });
     return NextResponse.json(
       {
-        response: "ThorAI tuvo un problema al responder.",
+        error: "ThorAI tuvo un problema al responder.",
+        details: errorDetails,
       },
       {
-        status: 500,
+        status: errorDetails.status ?? 500,
       }
     );
   }
