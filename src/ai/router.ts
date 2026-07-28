@@ -3,6 +3,7 @@ import { COMMAND_HELP_TEXT, getLocalResponse } from "@/ai/responses";
 import { geminiProvider } from "@/ai/providers/gemini";
 import { groqProvider } from "@/ai/providers/groq";
 import { ollamaProvider } from "@/ai/providers/ollama";
+import { planKnowledgeContext } from "@/thor/router/knowledgeRouter";
 import {
   extractProviderStatus,
   type AIChatMessage,
@@ -685,6 +686,19 @@ export async function routeThorRequest(payload: ThorRequestPayload): Promise<Tho
     payload.webSearch && !payload.translationMode && !payload.dictionaryMode && userMessage
       ? await searchWeb(userMessage)
       : "";
+
+  const knowledgePlan = await planKnowledgeContext({
+    query: userMessage,
+    maxChunks: 4,
+  });
+
+  console.log("ROUTER_KNOWLEDGE_PLAN", {
+    requestId: payload.requestId,
+    sessionId: payload.sessionId,
+    shouldAttachContext: knowledgePlan.shouldAttachContext,
+    reason: knowledgePlan.reason,
+    chunks: knowledgePlan.contextChunks.length,
+  });
 
   const systemPrompt = buildPrompt(payload, webContext, userMessage);
 

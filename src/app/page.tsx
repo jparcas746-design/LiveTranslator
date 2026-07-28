@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   BookOpenText,
   Bot,
@@ -956,6 +957,13 @@ export default function HomePage() {
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="nova-control-card">
+            <span className="nova-label">Administration</span>
+            <Link href="/admin" className="btn btn-secondary btn-md" style={{ textDecoration: "none" }}>
+              Open Knowledge Panel
+            </Link>
           </div>
         </aside>
 
