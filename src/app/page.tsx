@@ -1,7 +1,27 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  BookOpenText,
+  Bot,
+  Globe2,
+  Languages,
+  Mic,
+  Moon,
+  Pause,
+  Play,
+  Send,
+  Sparkles,
+  Sun,
+  X,
+} from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { MessageBubble } from "@/components/chat/MessageBubble";
+import { TranslationResultCard } from "@/components/translation/TranslationResultCard";
+import { ToastViewport } from "@/components/ui/ToastViewport";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { useTheme } from "@/hooks/useTheme";
+import { useToast } from "@/hooks/useToast";
 
 declare global {
   interface Window {
@@ -14,6 +34,8 @@ type Message = {
   role: "user" | "assistant";
   content: string;
 };
+
+const APP_FAVORITES_KEY = "thorai-favorites";
 
 export default function HomePage() {
   const [text, setText] = useState("");
@@ -32,8 +54,10 @@ export default function HomePage() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [requestInFlight, setRequestInFlight] = useState(false);
+  const [favorites, setFavorites] = useState<string[]>([]);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const requestQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const chatLogRef = useRef<HTMLDivElement | null>(null);
   const [lastTranslation, setLastTranslation] = useState<{
     originalText: string;
     sourceLanguage: string;
@@ -41,27 +65,33 @@ export default function HomePage() {
     translatedText: string;
   } | null>(null);
 
-  const languages = [
-    { name: "Español", code: "es-ES" },
-    { name: "English", code: "en-US" },
-    { name: "Français", code: "fr-FR" },
-    { name: "Deutsch", code: "de-DE" },
-    { name: "Italiano", code: "it-IT" },
-    { name: "Português", code: "pt-PT" },
-    { name: "日本語", code: "ja-JP" },
-    { name: "한국어", code: "ko-KR" },
-    { name: "中文", code: "zh-CN" },
-    { name: "Nederlands", code: "nl-NL" },
-    { name: "Svenska", code: "sv-SE" },
-    { name: "Dansk", code: "da-DK" },
-    { name: "Norsk", code: "nb-NO" },
-    { name: "Suomi", code: "fi-FI" },
-    { name: "Íslenska", code: "is-IS" },
-    { name: "Русский", code: "ru-RU" },
-  ];
+  const { theme, mounted, toggleTheme } = useTheme();
+  const { toasts, removeToast, showToast } = useToast();
+
+  const languages = useMemo(
+    () => [
+      { name: "Español", code: "es-ES" },
+      { name: "English", code: "en-US" },
+      { name: "Français", code: "fr-FR" },
+      { name: "Deutsch", code: "de-DE" },
+      { name: "Italiano", code: "it-IT" },
+      { name: "Português", code: "pt-PT" },
+      { name: "日本語", code: "ja-JP" },
+      { name: "한국어", code: "ko-KR" },
+      { name: "中文", code: "zh-CN" },
+      { name: "Nederlands", code: "nl-NL" },
+      { name: "Svenska", code: "sv-SE" },
+      { name: "Dansk", code: "da-DK" },
+      { name: "Norsk", code: "nb-NO" },
+      { name: "Suomi", code: "fi-FI" },
+      { name: "Íslenska", code: "is-IS" },
+      { name: "Русский", code: "ru-RU" },
+    ],
+    []
+  );
 
   const languageDisplayMap: Record<string, { short: string }> = {
-    "auto": { short: "AUTO" },
+    auto: { short: "AUTO" },
     "es-ES": { short: "ESP" },
     "en-US": { short: "ENG" },
     "fr-FR": { short: "FRA" },
@@ -80,16 +110,33 @@ export default function HomePage() {
     "ru-RU": { short: "RUS" },
   };
 
-  function getLanguageDisplay(languageCode: string) {
-    return languageDisplayMap[languageCode] || { short: "LANG" };
-  }
+  const isTranslationFavorite = translatedText.trim().length > 0 && favorites.includes(translatedText.trim());
 
-  function getDirectionLabel() {
-    const sourceDisplay = getLanguageDisplay(sourceLanguage);
-    const targetDisplay = getLanguageDisplay(targetLanguage);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(APP_FAVORITES_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setFavorites(parsed.filter((item) => typeof item === "string"));
+        }
+      }
+    } catch {
+      setFavorites([]);
+    }
+  }, []);
 
-    return `${sourceDisplay.short} → ${targetDisplay.short}`;
-  }
+  useEffect(() => {
+    window.localStorage.setItem(APP_FAVORITES_KEY, JSON.stringify(favorites.slice(0, 25)));
+  }, [favorites]);
+
+  useEffect(() => {
+    if (!chatLogRef.current) {
+      return;
+    }
+
+    chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight;
+  }, [messages]);
 
   useEffect(() => {
     return () => {
@@ -101,6 +148,17 @@ export default function HomePage() {
       setIsPaused(false);
     };
   }, []);
+
+  function getLanguageDisplay(languageCode: string) {
+    return languageDisplayMap[languageCode] || { short: "LANG" };
+  }
+
+  function getDirectionLabel() {
+    const sourceDisplay = getLanguageDisplay(sourceLanguage);
+    const targetDisplay = getLanguageDisplay(targetLanguage);
+
+    return `${sourceDisplay.short} → ${targetDisplay.short}`;
+  }
 
   function getSpeechRecognitionLanguage() {
     if (sourceLanguage === "auto") {
@@ -138,12 +196,10 @@ export default function HomePage() {
   }
 
   function startListening() {
-    const SpeechRecognition =
-      window.SpeechRecognition ||
-      window.webkitSpeechRecognition;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      alert("Tu navegador no soporta reconocimiento de voz");
+      showToast("error", "Voice input unavailable", "Your browser does not support speech recognition.");
       return;
     }
 
@@ -163,16 +219,16 @@ export default function HomePage() {
 
     recognition.onerror = () => {
       setListening(false);
+      showToast("error", "Voice input error", "Unable to capture voice input.");
     };
 
     recognition.onresult = (event: any) => {
-      const transcript =
-        event.results[0][0].transcript;
+      const transcript = event.results[0][0].transcript;
 
       if (mode === "translation") {
-        handleTranslationSubmit(transcript, true);
+        void handleTranslationSubmit(transcript, true);
       } else {
-        askAI(transcript, true);
+        void askAI(transcript, true);
       }
     };
 
@@ -248,22 +304,22 @@ export default function HomePage() {
     const baseLanguage = normalized.split("-")[0];
 
     const languageProfiles: Record<string, { preferredCodes: string[]; fallbackCodes: string[] }> = {
-      "en": { preferredCodes: ["en-us", "en-gb", "en-au", "en-ca"], fallbackCodes: ["en"] },
-      "es": { preferredCodes: ["es-es", "es-mx", "es-us", "es"], fallbackCodes: ["es"] },
-      "fr": { preferredCodes: ["fr-fr", "fr-ca", "fr"], fallbackCodes: ["fr"] },
-      "de": { preferredCodes: ["de-de", "de"], fallbackCodes: ["de"] },
-      "it": { preferredCodes: ["it-it", "it"], fallbackCodes: ["it"] },
-      "pt": { preferredCodes: ["pt-br", "pt-pt", "pt"], fallbackCodes: ["pt"] },
-      "ja": { preferredCodes: ["ja-jp", "ja"], fallbackCodes: ["ja"] },
-      "ko": { preferredCodes: ["ko-kr", "ko"], fallbackCodes: ["ko"] },
-      "zh": { preferredCodes: ["zh-cn", "zh-hk", "zh-tw", "zh"], fallbackCodes: ["zh"] },
-      "nl": { preferredCodes: ["nl-nl", "nl"], fallbackCodes: ["nl"] },
-      "sv": { preferredCodes: ["sv-se", "sv"], fallbackCodes: ["sv"] },
-      "da": { preferredCodes: ["da-dk", "da"], fallbackCodes: ["da"] },
-      "nb": { preferredCodes: ["nb-no", "nb"], fallbackCodes: ["nb"] },
-      "fi": { preferredCodes: ["fi-fi", "fi"], fallbackCodes: ["fi"] },
-      "is": { preferredCodes: ["is-is", "is"], fallbackCodes: ["is"] },
-      "ru": { preferredCodes: ["ru-ru", "ru"], fallbackCodes: ["ru"] },
+      en: { preferredCodes: ["en-us", "en-gb", "en-au", "en-ca"], fallbackCodes: ["en"] },
+      es: { preferredCodes: ["es-es", "es-mx", "es-us", "es"], fallbackCodes: ["es"] },
+      fr: { preferredCodes: ["fr-fr", "fr-ca", "fr"], fallbackCodes: ["fr"] },
+      de: { preferredCodes: ["de-de", "de"], fallbackCodes: ["de"] },
+      it: { preferredCodes: ["it-it", "it"], fallbackCodes: ["it"] },
+      pt: { preferredCodes: ["pt-br", "pt-pt", "pt"], fallbackCodes: ["pt"] },
+      ja: { preferredCodes: ["ja-jp", "ja"], fallbackCodes: ["ja"] },
+      ko: { preferredCodes: ["ko-kr", "ko"], fallbackCodes: ["ko"] },
+      zh: { preferredCodes: ["zh-cn", "zh-hk", "zh-tw", "zh"], fallbackCodes: ["zh"] },
+      nl: { preferredCodes: ["nl-nl", "nl"], fallbackCodes: ["nl"] },
+      sv: { preferredCodes: ["sv-se", "sv"], fallbackCodes: ["sv"] },
+      da: { preferredCodes: ["da-dk", "da"], fallbackCodes: ["da"] },
+      nb: { preferredCodes: ["nb-no", "nb"], fallbackCodes: ["nb"] },
+      fi: { preferredCodes: ["fi-fi", "fi"], fallbackCodes: ["fi"] },
+      is: { preferredCodes: ["is-is", "is"], fallbackCodes: ["is"] },
+      ru: { preferredCodes: ["ru-ru", "ru"], fallbackCodes: ["ru"] },
     };
 
     const profile = languageProfiles[baseLanguage] || {
@@ -276,12 +332,12 @@ export default function HomePage() {
         const lang = voice.lang.toLowerCase();
         const name = voice.name.toLowerCase();
         const matchesExact = profile.preferredCodes.some((code) => lang === code);
-        const matchesBase = profile.preferredCodes.some((code) => lang.startsWith(code)) || profile.fallbackCodes.some((code) => lang.startsWith(code));
+        const matchesBase =
+          profile.preferredCodes.some((code) => lang.startsWith(code)) ||
+          profile.fallbackCodes.some((code) => lang.startsWith(code));
         const matchesLanguageFamily = lang.startsWith(baseLanguage + "-") || lang.startsWith(baseLanguage);
         const isNatural = /natural|premium|neural|wave|universal|enhanced|female|male/i.test(name);
         const isGoogle = /google|siri|azure|amazon|polly|neural/i.test(name);
-        const isDefault = /default/i.test(name);
-        const isPreferredName = profile.preferredCodes.some((code) => name.includes(code.replace("-", "")));
 
         let score = 0;
         if (matchesExact) score += 120;
@@ -289,38 +345,20 @@ export default function HomePage() {
         if (matchesLanguageFamily) score += 35;
         if (isGoogle) score += 20;
         if (isNatural) score += 15;
-        if (isPreferredName) score += 10;
-        if (isDefault) score += 5;
 
         return { voice, score };
       })
       .sort((a, b) => b.score - a.score);
 
-    const preferredVoice = rankedVoices.find((entry) => entry.score >= 120);
-    if (preferredVoice) {
-      return preferredVoice.voice;
-    }
-
-    const fallbackVoice = rankedVoices.find((entry) => entry.score >= 80);
-    if (fallbackVoice) {
-      return fallbackVoice.voice;
-    }
-
-    const languageFamilyVoice = rankedVoices.find((entry) => entry.score >= 35);
-    if (languageFamilyVoice) {
-      return languageFamilyVoice.voice;
-    }
-
     return rankedVoices[0]?.voice;
   }
 
-  function speak(text: string, languageCode?: string) {
-    if (!window.speechSynthesis || !text?.trim()) return;
+  function speak(content: string, languageCode?: string) {
+    if (!window.speechSynthesis || !content.trim()) return;
 
     stopSpeechAndReset();
 
-    const utterance =
-      new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(content);
     currentUtteranceRef.current = utterance;
 
     const resolvedLanguage = languageCode || navigator.language || "es-ES";
@@ -352,27 +390,22 @@ export default function HomePage() {
 
   function pausePlayback() {
     if (!window.speechSynthesis) return;
-
     window.speechSynthesis.pause();
     setIsPaused(true);
   }
 
   function resumePlayback() {
     if (!window.speechSynthesis) return;
-
     window.speechSynthesis.resume();
     setIsPaused(false);
   }
 
   function stopPlayback() {
-    if (!window.speechSynthesis) return;
-
     stopSpeechAndReset();
   }
 
   function playTranslatedResult() {
     const trimmed = translatedText.trim();
-
     if (!trimmed || trimmed === "Translating..." || trimmed.startsWith("Error:")) {
       return;
     }
@@ -381,15 +414,20 @@ export default function HomePage() {
     speak(trimmed, translationLanguage);
   }
 
+  function parseApiErrorMessage(error: unknown) {
+    const fallback = String(error);
+    if (!(error instanceof Error)) {
+      return fallback;
+    }
+
+    return error.message || fallback;
+  }
+
   async function handleTranslationSubmit(textOverride?: string, fromVoice = false) {
     const trimmed = (textOverride ?? sourceText).trim();
-
     if (!trimmed) return;
 
-    const resolvedSourceLanguage =
-      sourceLanguage === "auto"
-        ? "auto"
-        : sourceLanguage;
+    const resolvedSourceLanguage = sourceLanguage === "auto" ? "auto" : sourceLanguage;
 
     setSourceText(trimmed);
     setTranslatedText("Translating...");
@@ -409,20 +447,19 @@ export default function HomePage() {
               },
             ],
             text: trimmed,
-            responseStyle: responseStyle,
+            responseStyle,
             translationMode: true,
             sourceLanguage: resolvedSourceLanguage,
             targetLanguage,
           }),
         });
 
+        const data = await res.json();
         if (!res.ok) {
-          throw new Error(`Error del servidor: ${res.status}`);
+          throw new Error(data?.error || `Server error: ${res.status}`);
         }
 
-        const data = await res.json();
         const translation = data.response || "No translation returned.";
-
         setTranslatedText(translation);
         setLastTranslation({
           originalText: trimmed,
@@ -432,11 +469,14 @@ export default function HomePage() {
         });
 
         if (fromVoice) {
-          const translationLanguage = getSpeechLanguageCode(targetLanguage);
-          speak(translation, translationLanguage);
+          speak(translation, getSpeechLanguageCode(targetLanguage));
         }
+
+        showToast("success", "Translation complete", data.cached ? "Loaded from cache" : "Fresh response");
       } catch (error) {
-        setTranslatedText("Error: " + String(error));
+        const message = parseApiErrorMessage(error);
+        setTranslatedText(`Error: ${message}`);
+        showToast("error", "Translation failed", message);
       }
     });
   }
@@ -460,27 +500,21 @@ export default function HomePage() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            messages: [
-              {
-                role: "user",
-                content: lastTranslation.originalText,
-              },
-            ],
+            messages: [{ role: "user", content: lastTranslation.originalText }],
             text: lastTranslation.originalText,
-            responseStyle: responseStyle,
+            responseStyle,
             translationMode: true,
             sourceLanguage: nextSourceLanguage,
             targetLanguage: nextTargetLanguage,
           }),
         });
 
+        const data = await res.json();
         if (!res.ok) {
-          throw new Error(`Error del servidor: ${res.status}`);
+          throw new Error(data?.error || `Server error: ${res.status}`);
         }
 
-        const data = await res.json();
         const translation = data.response || "No translation returned.";
-
         setTranslatedText(translation);
         setLastTranslation({
           originalText: lastTranslation.originalText,
@@ -489,23 +523,25 @@ export default function HomePage() {
           translatedText: translation,
         });
 
-        const translationLanguage = getSpeechLanguageCode(nextTargetLanguage);
-        speak(translation, translationLanguage);
+        speak(translation, getSpeechLanguageCode(nextTargetLanguage));
+        showToast("success", "Re-translation complete");
       } catch (error) {
-        setTranslatedText("Error: " + String(error));
+        const message = parseApiErrorMessage(error);
+        setTranslatedText(`Error: ${message}`);
+        showToast("error", "Re-translation failed", message);
       }
     });
   }
 
   async function handleDictionaryLookup() {
     const trimmed = dictionaryInput.trim();
-
     if (!trimmed) return;
 
     const words = trimmed.split(/\s+/).filter(Boolean);
     if (words.length !== 1) {
       setDictionaryError("Dictionary Mode is intended for individual words. Please use Translation Mode for complete sentences.");
       setDictionaryResult(null);
+      showToast("info", "Single word only", "Dictionary mode accepts one word at a time.");
       return;
     }
 
@@ -531,26 +567,25 @@ export default function HomePage() {
           }),
         });
 
+        const data = await res.json();
         if (!res.ok) {
-          throw new Error(`Error del servidor: ${res.status}`);
+          throw new Error(data?.error || `Server error: ${res.status}`);
         }
 
-        const data = await res.json();
         setDictionaryResult(data.response || "No dictionary entry returned.");
+        showToast("success", "Dictionary entry ready", data.cached ? "Loaded from cache" : undefined);
       } catch (error) {
-        setDictionaryError("Error: " + String(error));
+        const message = parseApiErrorMessage(error);
+        setDictionaryError(`Error: ${message}`);
+        showToast("error", "Dictionary lookup failed", message);
       } finally {
         setDictionaryLoading(false);
       }
     });
   }
 
-  async function askAI(
-    messageText?: string,
-    fromVoice = false
-  ) {
+  async function askAI(messageText?: string, fromVoice = false) {
     const finalText = messageText || text;
-
     if (!finalText.trim()) return;
 
     const userMessage: Message = {
@@ -558,16 +593,12 @@ export default function HomePage() {
       content: finalText,
     };
 
-    const newMessages = [
-      ...messages,
-      userMessage,
-    ];
-
+    const newMessages = [...messages, userMessage];
     setMessages([
       ...newMessages,
       {
         role: "assistant",
-        content: "Thor está pensando... ⚡",
+        content: "Thor is thinking...",
       },
     ]);
 
@@ -582,21 +613,16 @@ export default function HomePage() {
           },
           body: JSON.stringify({
             messages: newMessages,
-            responseStyle: responseStyle,
+            responseStyle,
           }),
         });
 
+        const data = await res.json();
         if (!res.ok) {
-          throw new Error(
-            `Error del servidor: ${res.status}`
-          );
+          throw new Error(data?.error || `Server error: ${res.status}`);
         }
 
-        const data = await res.json();
-
-        const aiResponse =
-          data.response ||
-          "ThorAI no devolvió respuesta.";
+        const aiResponse = data.response || "ThorAI returned no response.";
 
         setMessages([
           ...newMessages,
@@ -609,598 +635,541 @@ export default function HomePage() {
         if (fromVoice) {
           speak(aiResponse);
         }
-
       } catch (error) {
+        const message = parseApiErrorMessage(error);
         setMessages([
           ...newMessages,
           {
             role: "assistant",
-            content:
-              "Error: " + String(error),
+            content: `Error: ${message}`,
           },
         ]);
+        showToast("error", "Chat request failed", message);
       }
     });
   }
 
-  const hasTranslationToPlay = Boolean(
-    translatedText.trim() &&
-      translatedText !== "Translating..." &&
-      !translatedText.startsWith("Error:")
-  );
+  async function copyTranslation() {
+    if (!translatedText.trim()) return;
 
-  const showAudioControls = mode === "translation" && hasTranslationToPlay;
+    await navigator.clipboard.writeText(translatedText);
+    showToast("success", "Copied", "Translation copied to clipboard.");
+  }
+
+  async function shareTranslation() {
+    if (!translatedText.trim()) return;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "Translation from ThorAI",
+          text: translatedText,
+        });
+        showToast("success", "Shared", "Translation shared successfully.");
+      } else {
+        await copyTranslation();
+      }
+    } catch {
+      showToast("info", "Share cancelled");
+    }
+  }
+
+  function toggleFavoriteTranslation() {
+    const value = translatedText.trim();
+    if (!value) return;
+
+    setFavorites((prev) => {
+      if (prev.includes(value)) {
+        showToast("info", "Removed from favorites");
+        return prev.filter((item) => item !== value);
+      }
+
+      showToast("success", "Saved as favorite");
+      return [value, ...prev].slice(0, 25);
+    });
+  }
+
+  function getViewTitle() {
+    if (mode === "translation") return "Real-time Translation";
+    if (mode === "dictionary") return "Dictionary Assistant";
+    return "Conversation Assistant";
+  }
+
+  function getViewSubtitle() {
+    if (mode === "translation") {
+      return "Translate, listen, save and share with fast actions.";
+    }
+    if (mode === "dictionary") {
+      return "Get concise bilingual definitions with educational structure.";
+    }
+    return "Ask, discuss and explore topics with your AI assistant.";
+  }
+
+  if (!mounted) {
+    return (
+      <main className="app-shell" aria-busy="true">
+        <div className="sidebar">
+          <Skeleton height={42} width="70%" />
+          <Skeleton height={44} />
+          <Skeleton height={44} />
+          <Skeleton height={44} />
+        </div>
+        <section className="content-area">
+          <header className="topbar">
+            <Skeleton height={20} width="38%" />
+            <Skeleton height={36} width="24%" />
+          </header>
+          <div className="workspace">
+            <Skeleton height={300} />
+            <Skeleton height={120} />
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#0f172a",
-        display: "flex",
-        justifyContent: "center",
-        padding: "40px",
-      }}
-    >
-      <div
-        style={{
-          width: "800px",
-          background: "#1e293b",
-          borderRadius: "20px",
-          padding: "30px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "20px",
-        }}
-      >
-        <h1
-          style={{
-            color: "white",
-            textAlign: "center",
-            fontSize: "48px",
-          }}
-        >
-          ⚡ ThorAI
-        </h1>
+    <>
+      <ToastViewport toasts={toasts} onDismiss={removeToast} />
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px", alignItems: "center" }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              gap: "10px",
-              flexWrap: "wrap",
-            }}
-          >
+      <main className="app-shell">
+        <aside className="sidebar" aria-label="Main navigation">
+          <div className="brand">
+            <div className="brand-mark">
+              <Sparkles size={20} />
+            </div>
+            <div>
+              <div className="brand-title">ThorAI Translate</div>
+              <div className="brand-subtitle">Premium multilingual workspace</div>
+            </div>
+          </div>
+
+          <div className="mode-list">
+            <span className="section-label">Workspace</span>
+
             <button
-              onClick={() => setResponseStyle("formal")}
-              title="Formal"
-              style={{
-                padding: "10px 15px",
-                borderRadius: "10px",
-                border: responseStyle === "formal" ? "2px solid #fbbf24" : "1px solid #475569",
-                background: responseStyle === "formal" ? "#f59e0b" : "#334155",
-                color: "white",
-                cursor: "pointer",
-                fontSize: "18px",
+              type="button"
+              className={`mode-btn ${mode === "chat" ? "active" : ""}`}
+              onClick={() => {
+                stopSpeechAndReset();
+                setMode("chat");
               }}
+              aria-pressed={mode === "chat"}
             >
-              🎓
+              <span>Chat Assistant</span>
+              <Bot size={16} />
             </button>
+
             <button
-              onClick={() => setResponseStyle("balanced")}
-              title="Normal"
-              style={{
-                padding: "10px 15px",
-                borderRadius: "10px",
-                border: responseStyle === "balanced" ? "2px solid #34d399" : "1px solid #475569",
-                background: responseStyle === "balanced" ? "#10b981" : "#334155",
-                color: "white",
-                cursor: "pointer",
-                fontSize: "18px",
+              type="button"
+              className={`mode-btn ${mode === "translation" ? "active" : ""}`}
+              onClick={() => {
+                stopSpeechAndReset();
+                setMode("translation");
               }}
+              aria-pressed={mode === "translation"}
             >
-              🙂
+              <span>Translation</span>
+              <Languages size={16} />
             </button>
+
             <button
-              onClick={() => setResponseStyle("casual")}
-              title="Casual"
-              style={{
-                padding: "10px 15px",
-                borderRadius: "10px",
-                border: responseStyle === "casual" ? "2px solid #fb923c" : "1px solid #475569",
-                background: responseStyle === "casual" ? "#f97316" : "#334155",
-                color: "white",
-                cursor: "pointer",
-                fontSize: "18px",
-              }}
-            >
-              🔥
-            </button>
-            {mode === "translation" ? (
-              <button
-                onClick={() => {
-                  stopSpeechAndReset();
-                  setMode("chat");
-                }}
-                title="Return to assistant mode"
-                aria-label="Return to assistant mode"
-                style={{
-                  padding: "10px 15px",
-                  borderRadius: "10px",
-                  border: "1px solid #475569",
-                  background: "#334155",
-                  color: "white",
-                  cursor: "pointer",
-                  fontSize: "18px",
-                  lineHeight: 1,
-                }}
-              >
-                ←
-              </button>
-            ) : (
-              <button
-                onClick={() => setMode("translation")}
-                title="Switch to translation mode"
-                aria-label="Switch to translation mode"
-                style={{
-                  padding: "10px 15px",
-                  borderRadius: "10px",
-                  border: "1px solid #475569",
-                  background: "#334155",
-                  color: "white",
-                  cursor: "pointer",
-                  fontSize: "18px",
-                  lineHeight: 1,
-                }}
-              >
-                ⇄
-              </button>
-            )}
-            <button
+              type="button"
+              className={`mode-btn ${mode === "dictionary" ? "active" : ""}`}
               onClick={() => {
                 stopSpeechAndReset();
                 setMode("dictionary");
               }}
-              title="Switch to dictionary mode"
-              aria-label="Switch to dictionary mode"
-              style={{
-                padding: "10px 15px",
-                borderRadius: "10px",
-                border: "1px solid #475569",
-                background: "#334155",
-                color: "white",
-                cursor: "pointer",
-                fontSize: "18px",
-                lineHeight: 1,
-              }}
+              aria-pressed={mode === "dictionary"}
             >
-              📖
+              <span>Dictionary</span>
+              <BookOpenText size={16} />
             </button>
           </div>
-        </div>
 
-        {mode === "chat" ? (
-          <div
-            style={{
-              height: "500px",
-              overflowY: "auto",
-              padding: "15px",
-              background: "#0f172a",
-              borderRadius: "15px",
-            }}
-          >
-            {messages.map((msg, index) => (
-              <div
-                key={index}
-                style={{
-                  marginBottom: "15px",
-                  textAlign:
-                    msg.role === "user"
-                      ? "right"
-                      : "left",
-                }}
+          <div className="style-list">
+            <span className="section-label">Response style</span>
+            <div className="inline-actions">
+              <Button
+                size="sm"
+                variant={responseStyle === "formal" ? "primary" : "secondary"}
+                onClick={() => setResponseStyle("formal")}
               >
-                <span
-                  style={{
-                    display: "inline-block",
-                    padding: "15px",
-                    borderRadius: "15px",
-                    background:
-                      msg.role === "user"
-                        ? "#2563eb"
-                        : "#334155",
-                    color: "white",
-                    maxWidth: "80%",
-                    fontSize: "18px",
-                    whiteSpace: "pre-wrap",
-                  }}
-                >
-                  {msg.role === "assistant" ? (
-                    <ReactMarkdown>
-                      {msg.content}
-                    </ReactMarkdown>
+                Formal
+              </Button>
+              <Button
+                size="sm"
+                variant={responseStyle === "balanced" ? "primary" : "secondary"}
+                onClick={() => setResponseStyle("balanced")}
+              >
+                Balanced
+              </Button>
+              <Button
+                size="sm"
+                variant={responseStyle === "casual" ? "primary" : "secondary"}
+                onClick={() => setResponseStyle("casual")}
+              >
+                Casual
+              </Button>
+            </div>
+          </div>
+
+          <div className="side-actions">
+            <span className="section-label">Actions</span>
+            <Button
+              type="button"
+              size="md"
+              variant="secondary"
+              leftIcon={theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+              onClick={toggleTheme}
+            >
+              {theme === "dark" ? "Light mode" : "Dark mode"}
+            </Button>
+
+            <Button
+              type="button"
+              size="md"
+              variant={listening ? "danger" : "secondary"}
+              leftIcon={listening ? <X size={16} /> : <Mic size={16} />}
+              onClick={startListening}
+              disabled={requestInFlight}
+            >
+              {listening ? "Listening" : "Voice input"}
+            </Button>
+          </div>
+
+          <p className="footer-note">Keyboard friendly, responsive and optimized for production.</p>
+        </aside>
+
+        <section className="content-area">
+          <header className="topbar">
+            <div>
+              <div className="topbar-title">{getViewTitle()}</div>
+              <div className="topbar-subtitle">{getViewSubtitle()}</div>
+            </div>
+
+            <div className="topbar-actions">
+              <div className="chip">{getDirectionLabel()}</div>
+              {requestInFlight ? <div className="chip">Processing</div> : <div className="chip">Ready</div>}
+            </div>
+          </header>
+
+          <div className="workspace">
+            {mode === "chat" ? (
+              <section className="panel chat-container fade-in">
+                <div className="panel-head">
+                  <h3>Conversation</h3>
+                  <div className="quick-meta">
+                    <span className="chip">{messages.length} messages</span>
+                    <span className="chip">Style: {responseStyle}</span>
+                  </div>
+                </div>
+
+                <div className="chat-log" ref={chatLogRef}>
+                  {messages.length === 0 ? (
+                    <div className="empty-state">
+                      Ask anything to start your conversation.
+                    </div>
                   ) : (
-                    msg.content
+                    messages.map((msg, index) => (
+                      <MessageBubble key={`${msg.role}-${index}`} role={msg.role} content={msg.content} />
+                    ))
                   )}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : mode === "dictionary" ? (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "15px",
-              padding: "15px",
-              background: "#0f172a",
-              borderRadius: "15px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-              <h2 style={{ color: "white", margin: 0, fontSize: "24px" }}>
-                Dictionary
-              </h2>
-              <button
-                onClick={() => {
-                  stopSpeechAndReset();
-                  setMode("chat");
-                }}
-                title="Return to assistant mode"
-                aria-label="Return to assistant mode"
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "10px",
-                  border: "1px solid #475569",
-                  background: "#334155",
-                  color: "white",
-                  cursor: "pointer",
-                  fontSize: "18px",
-                  lineHeight: 1,
-                }}
-              >
-                ←
-              </button>
-            </div>
-            <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
-              Search a word
-              <input
-                value={dictionaryInput}
-                onChange={(e) => setDictionaryInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !requestInFlight) {
-                    e.preventDefault();
-                    handleDictionaryLookup();
-                  }
-                }}
-                placeholder="house"
-                style={{
-                  width: "100%",
-                  marginTop: "8px",
-                  padding: "12px",
-                  borderRadius: "10px",
-                  fontSize: "18px",
-                }}
-              />
-            </label>
-            <button
-              onClick={handleDictionaryLookup}
-              disabled={dictionaryLoading || requestInFlight}
-              style={{
-                padding: "10px 14px",
-                borderRadius: "10px",
-                border: "1px solid #475569",
-                background: dictionaryLoading || requestInFlight ? "#475569" : "#2563eb",
-                color: "white",
-                cursor: dictionaryLoading || requestInFlight ? "not-allowed" : "pointer",
-                fontSize: "15px",
-                fontWeight: 600,
-              }}
-            >
-              {dictionaryLoading ? "Searching..." : "Look up"}
-            </button>
-            {dictionaryError ? (
-              <div style={{ color: "#fca5a5", whiteSpace: "pre-wrap" }}>{dictionaryError}</div>
+
+                  {requestInFlight ? (
+                    <div className="message-row message-row-assistant">
+                      <div className="message-bubble message-bubble-assistant" aria-hidden="true">
+                        <Skeleton height={14} width="130px" />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="input-row">
+                  <label className="field-label" htmlFor="chat-input">
+                    Message
+                    <textarea
+                      id="chat-input"
+                      className="text-area"
+                      value={text}
+                      onChange={(event) => setText(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey && !requestInFlight) {
+                          event.preventDefault();
+                          void askAI(undefined, false);
+                        }
+                      }}
+                      placeholder="Ask for translations, explanations, code or ideas..."
+                      aria-label="Chat message input"
+                    />
+                  </label>
+
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="lg"
+                    leftIcon={<Send size={16} />}
+                    onClick={() => {
+                      if (requestInFlight) return;
+                      void askAI(undefined, false);
+                    }}
+                    disabled={requestInFlight}
+                    loading={requestInFlight}
+                  >
+                    Send message
+                  </Button>
+                </div>
+              </section>
             ) : null}
-            {dictionaryResult ? (
+
+            {mode === "translation" ? (
+              <section className="panel fade-in">
+                <div className="panel-head">
+                  <h3>Translation Studio</h3>
+                  <div className="quick-meta">
+                    <span className="chip">{getDirectionLabel()}</span>
+                    <span className="chip">Favorites: {favorites.length}</span>
+                  </div>
+                </div>
+
+                <div style={{ padding: "14px", display: "grid", gap: "14px" }}>
+                  <div className="translation-grid">
+                    <label className="field-label" htmlFor="source-language">
+                      Source language
+                      <select
+                        id="source-language"
+                        className="select"
+                        value={sourceLanguage}
+                        onChange={(event) => setSourceLanguage(event.target.value)}
+                        aria-label="Source language"
+                      >
+                        <option value="auto">Auto detect</option>
+                        {languages.map((language) => (
+                          <option key={language.code} value={language.code}>
+                            {language.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="field-label" htmlFor="target-language">
+                      Target language
+                      <select
+                        id="target-language"
+                        className="select"
+                        value={targetLanguage}
+                        onChange={(event) => setTargetLanguage(event.target.value)}
+                        aria-label="Target language"
+                      >
+                        {languages.map((language) => (
+                          <option key={language.code} value={language.code}>
+                            {language.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="field-label" htmlFor="translation-source">
+                    Source text
+                    <textarea
+                      id="translation-source"
+                      className="text-area"
+                      value={sourceText}
+                      onChange={(event) => setSourceText(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey && !requestInFlight) {
+                          event.preventDefault();
+                          void handleTranslationSubmit();
+                        }
+                      }}
+                      placeholder="Type or dictate text to translate..."
+                      aria-label="Translation source input"
+                    />
+                  </label>
+
+                  <div className="inline-actions">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="md"
+                      leftIcon={<Languages size={16} />}
+                      onClick={() => {
+                        void handleTranslationSubmit();
+                      }}
+                      disabled={requestInFlight}
+                      loading={requestInFlight}
+                    >
+                      Translate
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="md"
+                      leftIcon={<Globe2 size={16} />}
+                      onClick={() => {
+                        void retranslatePrevious();
+                      }}
+                      disabled={!lastTranslation || requestInFlight}
+                    >
+                      Re-translate
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="md"
+                      leftIcon={<Mic size={16} />}
+                      onClick={startListening}
+                      disabled={requestInFlight}
+                    >
+                      Voice translate
+                    </Button>
+                  </div>
+
+                  <TranslationResultCard
+                    title="Result"
+                    value={translatedText}
+                    loading={requestInFlight && translatedText === "Translating..."}
+                    isFavorite={isTranslationFavorite}
+                    onCopy={() => {
+                      void copyTranslation();
+                    }}
+                    onShare={() => {
+                      void shareTranslation();
+                    }}
+                    onFavorite={toggleFavoriteTranslation}
+                    onListen={playTranslatedResult}
+                  />
+
+                  {translatedText.trim() && !translatedText.startsWith("Error:") ? (
+                    <div className="inline-actions">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        leftIcon={<Play size={14} />}
+                        onClick={playTranslatedResult}
+                      >
+                        Play
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        leftIcon={<Pause size={14} />}
+                        onClick={pausePlayback}
+                        disabled={!isSpeaking || isPaused}
+                      >
+                        Pause
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        leftIcon={<Play size={14} />}
+                        onClick={resumePlayback}
+                        disabled={!isPaused}
+                      >
+                        Resume
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="danger"
+                        leftIcon={<X size={14} />}
+                        onClick={stopPlayback}
+                      >
+                        Stop
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
+            {mode === "dictionary" ? (
+              <section className="panel fade-in">
+                <div className="panel-head">
+                  <h3>Dictionary Lookup</h3>
+                  <span className="chip">One word at a time</span>
+                </div>
+
+                <div style={{ padding: "14px", display: "grid", gap: "12px" }}>
+                  <label className="field-label" htmlFor="dictionary-input">
+                    Word
+                    <input
+                      id="dictionary-input"
+                      className="text-input"
+                      value={dictionaryInput}
+                      onChange={(event) => setDictionaryInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !requestInFlight) {
+                          event.preventDefault();
+                          void handleDictionaryLookup();
+                        }
+                      }}
+                      placeholder="house"
+                    />
+                  </label>
+
+                  <div className="inline-actions">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      leftIcon={<BookOpenText size={16} />}
+                      onClick={() => {
+                        void handleDictionaryLookup();
+                      }}
+                      disabled={requestInFlight || dictionaryLoading}
+                      loading={requestInFlight || dictionaryLoading}
+                    >
+                      Look up
+                    </Button>
+                  </div>
+
+                  {dictionaryError ? <div className="empty-state">{dictionaryError}</div> : null}
+
+                  {dictionaryLoading ? (
+                    <div className="panel" style={{ padding: "12px", display: "grid", gap: "8px" }}>
+                      <Skeleton height={14} width="52%" />
+                      <Skeleton height={14} />
+                      <Skeleton height={14} width="88%" />
+                      <Skeleton height={14} width="67%" />
+                    </div>
+                  ) : null}
+
+                  {dictionaryResult ? (
+                    <div className="translation-output panel">{dictionaryResult}</div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
+            {requestInFlight ? (
               <div
                 style={{
-                  padding: "14px",
-                  borderRadius: "10px",
-                  background: "#1f2937",
-                  color: "#f8fafc",
-                  whiteSpace: "pre-wrap",
-                  overflowWrap: "anywhere",
-                }}
-              >
-                {dictionaryResult}
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "15px",
-              padding: "15px",
-              background: "#0f172a",
-              borderRadius: "15px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-              <h2 style={{ color: "white", margin: 0, fontSize: "24px" }}>
-                Translation
-              </h2>
-              <button
-                onClick={() => {
-                  stopSpeechAndReset();
-                  setMode("chat");
-                }}
-                title="Return to assistant mode"
-                aria-label="Return to assistant mode"
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "10px",
-                  border: "1px solid #475569",
-                  background: "#334155",
-                  color: "white",
-                  cursor: "pointer",
-                  fontSize: "18px",
-                  lineHeight: 1,
-                }}
-              >
-                ←
-              </button>
-            </div>
-            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "flex-end" }}>
-              <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
-                Source language
-                <select
-                  value={sourceLanguage}
-                  onChange={(e) => setSourceLanguage(e.target.value)}
-                  style={{ display: "block", marginTop: "6px", padding: "8px", borderRadius: "8px" }}
-                >
-                  <option value="auto">Auto Detect</option>
-                  {languages.map((language) => (
-                    <option key={language.code} value={language.code}>
-                      {language.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
-                Target language
-                <select
-                  value={targetLanguage}
-                  onChange={(e) => setTargetLanguage(e.target.value)}
-                  style={{ display: "block", marginTop: "6px", padding: "8px", borderRadius: "8px" }}
-                >
-                  {languages.map((language) => (
-                    <option key={language.code} value={language.code}>
-                      {language.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div
-                style={{
-                  padding: "8px 12px",
+                  height: "4px",
                   borderRadius: "999px",
-                  border: "1px solid #475569",
-                  background: "#0f172a",
-                  color: "#f8fafc",
-                  fontSize: "15px",
-                  fontWeight: 600,
-                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  background: "color-mix(in srgb, var(--bg-soft) 65%, transparent)",
                 }}
+                aria-hidden="true"
               >
-                {getDirectionLabel()}
+                <div
+                  style={{
+                    width: "40%",
+                    height: "100%",
+                    background: "linear-gradient(90deg, var(--primary), #22c55e)",
+                    animation: "shimmer 1.25s linear infinite",
+                  }}
+                />
               </div>
-            </div>
-            <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
-              Source text
-              <textarea
-                value={sourceText}
-                onChange={(e) => setSourceText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && !requestInFlight) {
-                    e.preventDefault();
-                    handleTranslationSubmit();
-                  }
-                }}
-                placeholder="Type text or use voice input"
-                style={{
-                  width: "100%",
-                  minHeight: "120px",
-                  marginTop: "8px",
-                  padding: "12px",
-                  borderRadius: "10px",
-                  fontSize: "18px",
-                  resize: "vertical",
-                }}
-              />
-            </label>
-            <label style={{ color: "#e2e8f0", fontSize: "16px" }}>
-              Translation
-              <div
-                style={{
-                  width: "100%",
-                  minHeight: "120px",
-                  marginTop: "8px",
-                  padding: "12px",
-                  borderRadius: "10px",
-                  fontSize: "18px",
-                  background: "#1f2937",
-                  color: "#f8fafc",
-                  whiteSpace: "pre-wrap",
-                  overflowWrap: "anywhere",
-                }}
-              >
-                {translatedText || "Waiting for translation..."}
-              </div>
-            </label>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-start" }}>
-              <button
-                onClick={retranslatePrevious}
-                disabled={!lastTranslation || requestInFlight}
-                title="Re-translate previous text"
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: "10px",
-                  border: "1px solid #475569",
-                  background: lastTranslation && !requestInFlight ? "#7c3aed" : "#334155",
-                  color: "white",
-                  cursor: lastTranslation && !requestInFlight ? "pointer" : "not-allowed",
-                  opacity: lastTranslation && !requestInFlight ? 1 : 0.7,
-                  fontSize: "15px",
-                  fontWeight: 600,
-                }}
-              >
-                🔄
-              </button>
-              {!lastTranslation && null}
-            </div>
-            {showAudioControls && (
-              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                <button
-                  onClick={playTranslatedResult}
-                  title="Play translated text"
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: "10px",
-                    border: "1px solid #475569",
-                    background: "#16a34a",
-                    color: "white",
-                    cursor: "pointer",
-                  }}
-                >
-                  ▶️
-                </button>
-                <button
-                  onClick={pausePlayback}
-                  disabled={!isSpeaking || isPaused}
-                  title="Pause playback"
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: "10px",
-                    border: "1px solid #475569",
-                    background: isSpeaking && !isPaused ? "#f59e0b" : "#334155",
-                    color: "white",
-                    cursor: isSpeaking && !isPaused ? "pointer" : "not-allowed",
-                    opacity: isSpeaking && !isPaused ? 1 : 0.7,
-                  }}
-                >
-                  ⏸️
-                </button>
-                <button
-                  onClick={resumePlayback}
-                  disabled={!isPaused}
-                  title="Resume playback"
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: "10px",
-                    border: "1px solid #475569",
-                    background: isPaused ? "#3b82f6" : "#334155",
-                    color: "white",
-                    cursor: isPaused ? "pointer" : "not-allowed",
-                    opacity: isPaused ? 1 : 0.7,
-                  }}
-                >
-                  ▶️
-                </button>
-                <button
-                  onClick={stopPlayback}
-                  title="Stop playback"
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: "10px",
-                    border: "1px solid #475569",
-                    background: "#dc2626",
-                    color: "white",
-                    cursor: "pointer",
-                  }}
-                >
-                  ⏹️
-                </button>
-              </div>
-            )}
+            ) : null}
           </div>
-        )}
-
-        {mode === "chat" ? (
-          <textarea
-            value={text}
-            onChange={(e) =>
-              setText(e.target.value)
-            }
-            onKeyDown={(e) => {
-              if (
-                e.key === "Enter" &&
-                !e.shiftKey &&
-                !requestInFlight
-              ) {
-                e.preventDefault();
-                askAI(undefined, false);
-              }
-            }}
-            placeholder="💬"
-            style={{
-              width: "100%",
-              height: "100px",
-              padding: "15px",
-              borderRadius: "10px",
-              fontSize: "20px",
-              resize: "none",
-            }}
-          />
-        ) : null}
-
-        <button
-          onClick={startListening}
-          disabled={requestInFlight}
-          title="Start voice input"
-          style={{
-            padding: "15px",
-            borderRadius: "10px",
-            border: "none",
-            background: requestInFlight
-              ? "#475569"
-              : listening
-              ? "#dc2626"
-              : "#16a34a",
-            color: "white",
-            fontSize: "22px",
-            cursor: requestInFlight ? "not-allowed" : "pointer",
-          }}
-        >
-          {listening ? "🔴🎤" : "🎤"}
-        </button>
-
-        <button
-          onClick={() => {
-            if (requestInFlight) return;
-            if (mode === "translation") {
-              handleTranslationSubmit();
-            } else {
-              askAI(undefined, false);
-            }
-          }}
-          disabled={requestInFlight}
-          title={mode === "translation" ? "Translate" : "Send message"}
-          style={{
-            padding: "15px",
-            borderRadius: "10px",
-            border: "none",
-            background: requestInFlight ? "#475569" : "#2563eb",
-            color: "white",
-            fontSize: "22px",
-            cursor: requestInFlight ? "not-allowed" : "pointer",
-          }}
-        >
-          ⚡
-        </button>
-      </div>
-    </main>
+        </section>
+      </main>
+    </>
   );
 }
