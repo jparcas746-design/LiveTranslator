@@ -60,9 +60,12 @@ export default function HomePage() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [requestInFlight, setRequestInFlight] = useState(false);
+  const [lastIntent, setLastIntent] = useState("NONE");
+  const [lastProvider, setLastProvider] = useState("LOCAL");
   const [favorites, setFavorites] = useState<string[]>([]);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const requestQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const sessionIdRef = useRef<string>("default-session");
   const chatLogRef = useRef<HTMLDivElement | null>(null);
   const [lastTranslation, setLastTranslation] = useState<{
     originalText: string;
@@ -71,8 +74,15 @@ export default function HomePage() {
     translatedText: string;
   } | null>(null);
 
-  const { theme, mounted, toggleTheme } = useTheme();
+  const { theme, mounted, toggleTheme, setTheme } = useTheme();
   const { toasts, removeToast, showToast } = useToast();
+
+  function getApiHeaders() {
+    return {
+      "Content-Type": "application/json",
+      "x-thor-session": sessionIdRef.current,
+    };
+  }
 
   const languages = useMemo(
     () => [
@@ -117,6 +127,22 @@ export default function HomePage() {
   };
 
   const isTranslationFavorite = translatedText.trim().length > 0 && favorites.includes(translatedText.trim());
+
+  useEffect(() => {
+    const existingSessionId = window.localStorage.getItem("thorai-session-id");
+    if (existingSessionId?.trim()) {
+      sessionIdRef.current = existingSessionId;
+      return;
+    }
+
+    const generatedSessionId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `thor-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    sessionIdRef.current = generatedSessionId;
+    window.localStorage.setItem("thorai-session-id", generatedSessionId);
+  }, []);
 
   useEffect(() => {
     try {
@@ -442,9 +468,7 @@ export default function HomePage() {
       try {
         const res = await fetch("/api/translate", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: getApiHeaders(),
           body: JSON.stringify({
             messages: [
               {
@@ -464,6 +488,9 @@ export default function HomePage() {
         if (!res.ok) {
           throw new Error(data?.error || `Server error: ${res.status}`);
         }
+
+        setLastIntent(data?.intent || "TRANSLATE");
+        setLastProvider(data?.provider || "LOCAL");
 
         const translation = data.response || "No translation returned.";
         setTranslatedText(translation);
@@ -502,9 +529,7 @@ export default function HomePage() {
       try {
         const res = await fetch("/api/translate", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: getApiHeaders(),
           body: JSON.stringify({
             messages: [{ role: "user", content: lastTranslation.originalText }],
             text: lastTranslation.originalText,
@@ -519,6 +544,9 @@ export default function HomePage() {
         if (!res.ok) {
           throw new Error(data?.error || `Server error: ${res.status}`);
         }
+
+        setLastIntent(data?.intent || "TRANSLATE");
+        setLastProvider(data?.provider || "LOCAL");
 
         const translation = data.response || "No translation returned.";
         setTranslatedText(translation);
@@ -560,9 +588,7 @@ export default function HomePage() {
       try {
         const res = await fetch("/api/translate", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: getApiHeaders(),
           body: JSON.stringify({
             text: normalizedWord,
             responseStyle,
@@ -577,6 +603,9 @@ export default function HomePage() {
         if (!res.ok) {
           throw new Error(data?.error || `Server error: ${res.status}`);
         }
+
+        setLastIntent(data?.intent || "DICTIONARY");
+        setLastProvider(data?.provider || "LOCAL");
 
         setDictionaryResult(data.response || "No dictionary entry returned.");
         showToast("success", "Dictionary entry ready", data.cached ? "Loaded from cache" : undefined);
@@ -614,9 +643,7 @@ export default function HomePage() {
       try {
         const res = await fetch("/api/translate", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: getApiHeaders(),
           body: JSON.stringify({
             messages: newMessages,
             responseStyle,
@@ -628,7 +655,22 @@ export default function HomePage() {
           throw new Error(data?.error || `Server error: ${res.status}`);
         }
 
+        const detectedIntent = data?.intent || "UNKNOWN";
+        const detectedProvider = data?.provider || "LOCAL";
+        setLastIntent(detectedIntent);
+        setLastProvider(detectedProvider);
+
         const aiResponse = data.response || "ThorAI returned no response.";
+
+        if (data?.command?.name === "ENABLE_DARK_MODE") {
+          setTheme("dark");
+          showToast("success", "Command executed", "Dark mode enabled.");
+        }
+
+        if (data?.command?.name === "ENABLE_LIGHT_MODE") {
+          setTheme("light");
+          showToast("success", "Command executed", "Light mode enabled.");
+        }
 
         setMessages([
           ...newMessages,
@@ -920,6 +962,7 @@ export default function HomePage() {
         <section className="nova-main">
           <header className="nova-topbar">
             <div className="nova-topbar-title-wrap">
+              <div className="thor-v2-badge">ThorAI Hybrid Router v2</div>
               <div className="nova-kicker">
                 <LayoutDashboard size={14} />
                 Active module
@@ -944,6 +987,12 @@ export default function HomePage() {
               <div className="nova-chip nova-chip-status">
                 <ShieldCheck size={14} />
                 {requestInFlight ? "Synchronizing" : "Ready"}
+              </div>
+              <div className="nova-chip">
+                Intent: {lastIntent}
+              </div>
+              <div className="nova-chip">
+                Provider: {lastProvider}
               </div>
               <Button type="button" variant="ghost" size="sm" onClick={clearCurrentMode}>
                 Clear view

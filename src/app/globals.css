@@ -880,3 +880,90 @@ textarea:focus-visible {
     max-width: 96%;
   }
 }
+
+/* ThorAI Hybrid v2 visual refresh */
+:root {
+  --bg: #f4efe4;
+  --bg-elev: #fffaf0;
+  --bg-soft: #f3e7cf;
+  --bg-muted: #eadab6;
+  --text: #17120c;
+  --text-muted: #5f4d35;
+  --text-soft: #8a7452;
+  --line: #d9c7a2;
+  --line-strong: #c9b084;
+  --brand: #b4472d;
+  --brand-2: #d97706;
+  --brand-soft: rgba(180, 71, 45, 0.12);
+}
+
+:root[data-theme="dark"] {
+  --bg: #140f0b;
+  --bg-elev: #211710;
+  --bg-soft: #2b1f15;
+  --bg-muted: #352618;
+  --text: #fff7ea;
+  --text-muted: #e9d4b1;
+  --text-soft: #c7a979;
+  --line: #4a341f;
+  --line-strong: #68482b;
+  --brand: #f97316;
+  --brand-2: #fb923c;
+  --brand-soft: rgba(249, 115, 22, 0.18);
+}
+
+body {
+  background:
+    radial-gradient(circle at 8% 12%, rgba(251, 146, 60, 0.2), transparent 33%),
+    radial-gradient(circle at 90% 84%, rgba(180, 71, 45, 0.2), transparent 34%),
+    linear-gradient(165deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 80%, #000000) 100%);
+}
+
+.nova-shell {
+  border-radius: 20px;
+  border: 2px solid color-mix(in srgb, var(--line-strong) 75%, transparent);
+  box-shadow: 0 26px 72px -38px rgba(0, 0, 0, 0.58);
+}
+
+.nova-sidebar {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-soft) 84%, transparent) 0%, color-mix(in srgb, var(--bg-elev) 96%, transparent) 100%);
+}
+
+.nova-brand-mark {
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+}
+
+.thor-v2-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--brand) 40%, var(--line));
+  background: color-mix(in srgb, var(--brand-soft) 75%, transparent);
+  color: var(--brand);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 5px 10px;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.nova-topbar {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--bg-soft) 70%, transparent) 0%, color-mix(in srgb, var(--bg-elev) 94%, transparent) 100%);
+}
+
+.panel {
+  border-width: 2px;
+  box-shadow: 0 20px 46px -28px rgba(10, 8, 6, 0.56);
+}
+
+.message-bubble-user {
+  background: linear-gradient(140deg, #b4472d 0%, #d97706 100%);
+}
+
+.btn-primary {
+  background: linear-gradient(145deg, #b4472d 0%, #ea580c 100%);
+}

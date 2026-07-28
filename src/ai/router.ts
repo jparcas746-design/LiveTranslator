@@ -204,7 +204,15 @@ function parseCommand(message: string): ParsedCommand | null {
     return { name: "ENABLE_DARK_MODE" };
   }
 
+  if (/\bmodo\s+oscuro\b/i.test(text)) {
+    return { name: "ENABLE_DARK_MODE" };
+  }
+
   if (/\b(activar|enable|poner|set)\s+(modo\s+)?(claro|light)\b/i.test(text)) {
+    return { name: "ENABLE_LIGHT_MODE" };
+  }
+
+  if (/\bmodo\s+claro\b/i.test(text)) {
     return { name: "ENABLE_LIGHT_MODE" };
   }
 
@@ -556,11 +564,50 @@ export async function routeThorRequest(payload: ThorRequestPayload): Promise<Tho
     dictionaryMode: payload.dictionaryMode,
   });
 
+  console.log("ROUTER_INTENT_DETECTED", {
+    requestId: payload.requestId,
+    sessionId: payload.sessionId,
+    intent,
+    translationMode: Boolean(payload.translationMode),
+    dictionaryMode: Boolean(payload.dictionaryMode),
+    message: userMessage,
+  });
+
+  const aiReason = payload.translationMode
+    ? "translation-mode-enabled"
+    : payload.dictionaryMode
+      ? "dictionary-mode-enabled"
+      : intent === "AI"
+        ? "complex-ai-keywords-detected"
+        : intent === "UNKNOWN"
+          ? "intent-unknown-fallback"
+          : intent === "TRANSLATE"
+            ? "translation-intent-detected"
+            : intent === "DICTIONARY"
+              ? "dictionary-intent-detected"
+              : intent === "GRAMMAR"
+                ? "grammar-intent-detected"
+                : "local-intent-fast-path";
+
+  const useAI = shouldUseAI(intent, payload);
+  console.log("ROUTER_AI_DECISION", {
+    requestId: payload.requestId,
+    sessionId: payload.sessionId,
+    intent,
+    useAI,
+    reason: aiReason,
+  });
+
   const cacheKey = buildCacheKey(payload, intent, userMessage);
 
-  if (shouldUseAI(intent, payload)) {
+  if (useAI) {
     const cached = getCachedResult(cacheKey);
     if (cached) {
+      console.log("ROUTER_CACHE_HIT", {
+        requestId: payload.requestId,
+        sessionId: payload.sessionId,
+        intent,
+      });
       return cached;
     }
   }
@@ -596,8 +643,26 @@ export async function routeThorRequest(payload: ThorRequestPayload): Promise<Tho
     };
   }
 
-  if (isSimpleLocalIntent(intent) && !shouldUseAI(intent, payload)) {
+  if (isSimpleLocalIntent(intent)) {
     const response = getLocalResponse(intent, {
+      historyCount: getHistory(payload.sessionId).length,
+      preferredLanguage: getPreferences(payload.sessionId).language,
+    });
+
+    if (userMessage) {
+      appendHistory(payload.sessionId, "user", userMessage);
+    }
+    appendHistory(payload.sessionId, "assistant", response);
+
+    return {
+      response,
+      intent,
+      cached: false,
+    };
+  }
+
+  if (!useAI) {
+    const response = getLocalResponse("HELP", {
       historyCount: getHistory(payload.sessionId).length,
       preferredLanguage: getPreferences(payload.sessionId).language,
     });
@@ -623,7 +688,33 @@ export async function routeThorRequest(payload: ThorRequestPayload): Promise<Tho
 
   const systemPrompt = buildPrompt(payload, webContext, userMessage);
 
-  const aiResult = await askProviderWithFallback(payload, systemPrompt, messages);
+  let aiResult: Awaited<ReturnType<typeof askProviderWithFallback>> | null = null;
+
+  try {
+    aiResult = await askProviderWithFallback(payload, systemPrompt, messages);
+  } catch (error) {
+    const providerErrors =
+      error instanceof Error
+        ? ((error as Error & { details?: ProviderErrorDetail[] }).details || [])
+        : [];
+
+    const response =
+      "Intenté usar IA para esta consulta, pero ahora mismo no hay proveedores disponibles. " +
+      "Puedes reintentar en unos segundos o activar/configurar Ollama, Groq o Gemini.";
+
+    if (userMessage) {
+      appendHistory(payload.sessionId, "user", userMessage);
+    }
+    appendHistory(payload.sessionId, "assistant", response);
+
+    return {
+      response,
+      intent,
+      cached: false,
+      providers: providerErrors,
+    };
+  }
+
   const cleaned = cleanMarkdownNoise(aiResult.response);
 
   if (userMessage) {
