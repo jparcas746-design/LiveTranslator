@@ -17,12 +17,21 @@ import { thorLogger } from "@/thor/utils/logger";
 
 let pool: Pool | null = null;
 
+function resolveConnectionString() {
+  return (
+    process.env.THOR_KNOWLEDGE_DB_DSN?.trim() ||
+    process.env.POSTGRES_URL?.trim() ||
+    process.env.DATABASE_URL?.trim() ||
+    null
+  );
+}
+
 function getPool() {
   if (pool) {
     return pool;
   }
 
-  const connectionString = process.env.THOR_KNOWLEDGE_DB_DSN;
+  const connectionString = resolveConnectionString();
   if (!connectionString) {
     return null;
   }

@@ -44,6 +44,19 @@ type Message = {
 };
 
 const APP_FAVORITES_KEY = "thorai-favorites";
+const APP_CHAT_STATE_KEY = "thorai-chat-state";
+
+type PersistedChatState = {
+  messages: Message[];
+  text: string;
+  mode: "chat" | "translation" | "dictionary";
+  sourceText: string;
+  translatedText: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  dictionaryInput: string;
+  dictionaryResult: string | null;
+};
 
 export default function HomePage() {
   const [text, setText] = useState("");
@@ -163,6 +176,67 @@ export default function HomePage() {
   useEffect(() => {
     window.localStorage.setItem(APP_FAVORITES_KEY, JSON.stringify(favorites.slice(0, 25)));
   }, [favorites]);
+
+  useEffect(() => {
+    try {
+      const raw = window.sessionStorage.getItem(APP_CHAT_STATE_KEY);
+      if (!raw) {
+        return;
+      }
+
+      const state = JSON.parse(raw) as Partial<PersistedChatState>;
+      if (Array.isArray(state.messages)) {
+        const safeMessages = state.messages.filter(
+          (entry) =>
+            entry &&
+            (entry.role === "user" || entry.role === "assistant") &&
+            typeof entry.content === "string"
+        );
+        setMessages(safeMessages.slice(-100));
+      }
+
+      if (typeof state.text === "string") setText(state.text);
+      if (state.mode === "chat" || state.mode === "translation" || state.mode === "dictionary") {
+        setMode(state.mode);
+      }
+      if (typeof state.sourceText === "string") setSourceText(state.sourceText);
+      if (typeof state.translatedText === "string") setTranslatedText(state.translatedText);
+      if (typeof state.sourceLanguage === "string") setSourceLanguage(state.sourceLanguage);
+      if (typeof state.targetLanguage === "string") setTargetLanguage(state.targetLanguage);
+      if (typeof state.dictionaryInput === "string") setDictionaryInput(state.dictionaryInput);
+      if (typeof state.dictionaryResult === "string" || state.dictionaryResult === null) {
+        setDictionaryResult(state.dictionaryResult ?? null);
+      }
+    } catch {
+      // Ignore malformed session payload.
+    }
+  }, []);
+
+  useEffect(() => {
+    const payload: PersistedChatState = {
+      messages: messages.slice(-100),
+      text,
+      mode,
+      sourceText,
+      translatedText,
+      sourceLanguage,
+      targetLanguage,
+      dictionaryInput,
+      dictionaryResult,
+    };
+
+    window.sessionStorage.setItem(APP_CHAT_STATE_KEY, JSON.stringify(payload));
+  }, [
+    messages,
+    text,
+    mode,
+    sourceText,
+    translatedText,
+    sourceLanguage,
+    targetLanguage,
+    dictionaryInput,
+    dictionaryResult,
+  ]);
 
   useEffect(() => {
     if (!chatLogRef.current) {

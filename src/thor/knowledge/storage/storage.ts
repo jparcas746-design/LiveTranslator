@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { del, put } from "@vercel/blob";
 
 type SaveKnowledgeSourceInput = {
   fileName: string;
@@ -31,7 +32,7 @@ export function createStorageNotConfiguredError(): StorageCapabilityError {
   return {
     code: "KNOWLEDGE_STORAGE_NOT_CONFIGURED",
     message:
-      "Knowledge source storage is not configured. Set THOR_KNOWLEDGE_STORAGE_DIR to a persistent volume path.",
+      "Knowledge source storage is not configured. Set BLOB_READ_WRITE_TOKEN (Vercel) or THOR_KNOWLEDGE_STORAGE_DIR (persistent volume path).",
   };
 }
 
@@ -50,11 +51,16 @@ function sanitizeFileName(fileName: string) {
 
 function resolveBaseDir() {
   const configured = process.env.THOR_KNOWLEDGE_STORAGE_DIR?.trim();
-  if (!configured) {
+  if (configured) {
+    return path.resolve(configured);
+  }
+
+  // Local fallback is persistent across reloads/restarts in non-serverless environments.
+  if (process.env.VERCEL === "1") {
     return null;
   }
 
-  return path.resolve(configured);
+  return path.resolve(process.cwd(), ".thor-knowledge-storage");
 }
 
 function buildAbsolutePath(baseDir: string, relativePath: string) {
@@ -127,6 +133,53 @@ export const localPersistentKnowledgeStorage: KnowledgeSourceStorage = {
   },
 };
 
+export const vercelBlobKnowledgeStorage: KnowledgeSourceStorage = {
+  isConfigured() {
+    return Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());
+  },
+
+  async saveSource(input) {
+    if (!process.env.BLOB_READ_WRITE_TOKEN?.trim()) {
+      throw createStorageNotConfiguredError();
+    }
+
+    const safeFileName = sanitizeFileName(input.fileName);
+    const category = sanitizeSegment(input.category || "general");
+    const key = `thor-knowledge/${category}/${randomUUID()}-${safeFileName}`;
+
+    const uploaded = await put(key, input.fileBuffer, {
+      access: "public",
+      contentType: "application/octet-stream",
+      addRandomSuffix: false,
+    });
+
+    return {
+      filePath: `blob:${uploaded.url}`,
+      fileSizeBytes: input.fileBuffer.byteLength,
+    };
+  },
+
+  async readSource(filePathValue) {
+    const blobUrl = filePathValue.startsWith("blob:") ? filePathValue.slice(5) : filePathValue;
+    const response = await fetch(blobUrl, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`Unable to read source blob (${response.status})`);
+    }
+
+    const payload = await response.arrayBuffer();
+    return Buffer.from(payload);
+  },
+
+  async deleteSource(filePathValue) {
+    const blobUrl = filePathValue.startsWith("blob:") ? filePathValue.slice(5) : filePathValue;
+    await del(blobUrl);
+  },
+};
+
 export function resolveKnowledgeSourceStorage() {
+  if (vercelBlobKnowledgeStorage.isConfigured()) {
+    return vercelBlobKnowledgeStorage;
+  }
+
   return localPersistentKnowledgeStorage;
 }

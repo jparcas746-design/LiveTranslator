@@ -22,3 +22,4 @@ pnpm-debug.log*
 # macOS
 .DS_Store
 .vercel
+.thor-knowledge-storage/

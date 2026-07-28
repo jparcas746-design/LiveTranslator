@@ -1,5 +1,10 @@
+import { localFileKnowledgeRepository } from "@/thor/knowledge/database/localFileRepository";
 import { postgresKnowledgeRepository } from "@/thor/knowledge/database/postgresRepository";
 
 export function resolveKnowledgeRepository() {
-  return postgresKnowledgeRepository;
+  if (postgresKnowledgeRepository.isConfigured()) {
+    return postgresKnowledgeRepository;
+  }
+
+  return localFileKnowledgeRepository;
 }
