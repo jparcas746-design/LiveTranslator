@@ -8,6 +8,7 @@ import type {
   CreateKnowledgeChunkInput,
   CreateKnowledgeDocumentInput,
   KnowledgeRepository,
+  ListKnowledgeDocumentsQuery,
 } from "@/thor/knowledge/database/repository";
 
 type InMemoryChunk = CreateKnowledgeChunkInput & {
@@ -70,10 +71,20 @@ export const inMemoryKnowledgeRepository: KnowledgeRepository = {
     return true;
   },
 
-  async listDocuments() {
+  async listDocuments(query?: ListKnowledgeDocumentsQuery) {
+    const limit = Math.max(1, Math.min(200, Math.floor(query?.limit || 50)));
+    const offset = Math.max(0, Math.floor(query?.offset || 0));
+    const category = query?.category?.trim();
+    const status = query?.status;
+    const search = query?.search?.trim().toLowerCase();
+
     return Array.from(documents.values()).sort((left, right) =>
       right.createdAt.localeCompare(left.createdAt)
-    );
+    )
+      .filter((doc) => (category ? doc.category === category : true))
+      .filter((doc) => (status ? doc.status === status : true))
+      .filter((doc) => (search ? doc.name.toLowerCase().includes(search) : true))
+      .slice(offset, offset + limit);
   },
 
   async createDocument(input: CreateKnowledgeDocumentInput) {
@@ -85,6 +96,9 @@ export const inMemoryKnowledgeRepository: KnowledgeRepository = {
       sourceType: input.sourceType,
       status: "queued",
       chunkCount: 0,
+      fileSizeBytes: input.fileSizeBytes,
+      filePath: input.filePath,
+      uploadedAt: input.uploadedAt,
       indexedAt: null,
       createdAt: now,
       updatedAt: now,

@@ -1,5 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE TABLE IF NOT EXISTS thor_knowledge_documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -8,12 +9,24 @@ CREATE TABLE IF NOT EXISTS thor_knowledge_documents (
   source_type TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'queued',
   chunk_count INTEGER NOT NULL DEFAULT 0,
+  file_size_bytes BIGINT NOT NULL DEFAULT 0,
+  file_path TEXT NOT NULL DEFAULT '',
+  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   indexed_at TIMESTAMPTZ,
   last_error TEXT,
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE thor_knowledge_documents
+  ADD COLUMN IF NOT EXISTS file_size_bytes BIGINT NOT NULL DEFAULT 0;
+
+ALTER TABLE thor_knowledge_documents
+  ADD COLUMN IF NOT EXISTS file_path TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE thor_knowledge_documents
+  ADD COLUMN IF NOT EXISTS uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE TABLE IF NOT EXISTS thor_knowledge_chunks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -32,6 +45,15 @@ CREATE INDEX IF NOT EXISTS idx_thor_knowledge_documents_category
 
 CREATE INDEX IF NOT EXISTS idx_thor_knowledge_documents_status
   ON thor_knowledge_documents(status);
+
+CREATE INDEX IF NOT EXISTS idx_thor_knowledge_documents_uploaded_at
+  ON thor_knowledge_documents(uploaded_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_thor_knowledge_documents_name_trgm
+  ON thor_knowledge_documents USING gin (name gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_thor_knowledge_documents_file_path
+  ON thor_knowledge_documents(file_path);
 
 CREATE INDEX IF NOT EXISTS idx_thor_knowledge_chunks_document
   ON thor_knowledge_chunks(document_id);

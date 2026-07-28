@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
   BookOpenText,
   CircleCheck,
   FileSearch,
@@ -23,10 +25,15 @@ type AdminDocument = {
   name: string;
   category: string;
   status: "queued" | "indexing" | "ready" | "failed";
+  fileSizeBytes: number;
+  filePath: string;
+  uploadedAt: string;
   indexedAt: string | null;
   chunkCount: number;
   createdAt: string;
 };
+
+type DocumentStatusFilter = "all" | AdminDocument["status"];
 
 type SearchChunk = {
   score: number;
@@ -49,6 +56,19 @@ function formatDate(value: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString();
+}
+
+function formatFileSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const rounded = unit === 0 ? Math.round(value) : Math.round(value * 10) / 10;
+  return `${rounded} ${units[unit]}`;
 }
 
 function fileAcceptByKind(kind: UploadKind) {
@@ -155,6 +175,10 @@ export default function AdminKnowledgePage() {
 
   const [category, setCategory] = useState("general");
   const [documents, setDocuments] = useState<AdminDocument[]>([]);
+  const [listCategoryFilter, setListCategoryFilter] = useState("");
+  const [listStatusFilter, setListStatusFilter] = useState<DocumentStatusFilter>("all");
+  const [listSearchFilter, setListSearchFilter] = useState("");
+  const [pageLimit, setPageLimit] = useState(50);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchChunk[]>([]);
   const [statusText, setStatusText] = useState("Ready");
@@ -163,6 +187,7 @@ export default function AdminKnowledgePage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [workingDocumentId, setWorkingDocumentId] = useState<string | null>(null);
+  const [pendingDeleteDocument, setPendingDeleteDocument] = useState<AdminDocument | null>(null);
 
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingUploadKind, setPendingUploadKind] = useState<UploadKind>("pdf");
@@ -196,7 +221,21 @@ export default function AdminKnowledgePage() {
     setLoadingDocs(true);
     setStatusText("Cargando documentos...");
 
-    const result = await fetchJson<{ documents: AdminDocument[] }>("/api/admin/knowledge/documents", {
+    const params = new URLSearchParams();
+    params.set("limit", String(pageLimit));
+    if (listCategoryFilter.trim()) {
+      params.set("category", listCategoryFilter.trim());
+    }
+    if (listStatusFilter !== "all") {
+      params.set("status", listStatusFilter);
+    }
+    if (listSearchFilter.trim()) {
+      params.set("search", listSearchFilter.trim());
+    }
+
+    const endpoint = `/api/admin/knowledge/documents?${params.toString()}`;
+
+    const result = await fetchJson<{ documents: AdminDocument[] }>(endpoint, {
       method: "GET",
       credentials: "include",
       cache: "no-store",
@@ -215,16 +254,21 @@ export default function AdminKnowledgePage() {
     setDocuments(result.data.documents || []);
     setStatusText(`Documentos cargados: ${result.data.documents?.length || 0}`);
     setLoadingDocs(false);
-  }, []);
+  }, [listCategoryFilter, listSearchFilter, listStatusFilter, pageLimit]);
 
   useEffect(() => {
     void (async () => {
-      const ok = await checkSession();
-      if (ok) {
-        await loadDocuments();
-      }
+      await checkSession();
     })();
-  }, [checkSession, loadDocuments]);
+  }, [checkSession]);
+
+  useEffect(() => {
+    if (authState !== "authenticated") {
+      return;
+    }
+
+    void loadDocuments();
+  }, [authState, loadDocuments]);
 
   const authenticate = useCallback(async () => {
     setAuthError(null);
@@ -249,8 +293,7 @@ export default function AdminKnowledgePage() {
     setAuthInput("");
     setAuthState("authenticated");
     setStatusText("Sesión iniciada");
-    await loadDocuments();
-  }, [authInput, loadDocuments]);
+  }, [authInput]);
 
   const logout = useCallback(async () => {
     await fetchJson("/api/admin/session", {
@@ -261,6 +304,7 @@ export default function AdminKnowledgePage() {
     setAuthState("locked");
     setDocuments([]);
     setSearchResults([]);
+    setPendingDeleteDocument(null);
     setStatusText("Sesión cerrada");
   }, []);
 
@@ -338,8 +382,13 @@ export default function AdminKnowledgePage() {
 
     setStatusText("Documento eliminado");
     setWorkingDocumentId(null);
+    setPendingDeleteDocument(null);
     await loadDocuments();
   }, [loadDocuments]);
+
+  const askDeleteDocument = useCallback((document: AdminDocument) => {
+    setPendingDeleteDocument(document);
+  }, []);
 
   const reindexDocument = useCallback(async (documentId: string) => {
     setWorkingDocumentId(documentId);
@@ -396,6 +445,14 @@ export default function AdminKnowledgePage() {
     if (pendingUploadKind === "word") return "Word";
     return "TXT";
   }, [pendingUploadKind]);
+
+  const documentCounters = useMemo(() => {
+    const counters = { ready: 0, failed: 0, indexing: 0, queued: 0 };
+    for (const document of documents) {
+      counters[document.status] += 1;
+    }
+    return counters;
+  }, [documents]);
 
   return (
     <main className="min-h-screen bg-thor-bg text-thor-text admin-grid-bg">
@@ -481,6 +538,13 @@ export default function AdminKnowledgePage() {
             </div>
 
             <div className="flex items-center gap-2">
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
+              >
+                <ArrowLeft size={16} />
+                Volver al Chat
+              </Link>
               <button
                 type="button"
                 onClick={() => {
@@ -618,17 +682,59 @@ export default function AdminKnowledgePage() {
         </section>
 
         <section className="rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-lg">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">Lista de documentos</h2>
-            <span className="text-xs text-thor-muted">Total: {documents.length}</span>
+            <span className="text-xs text-thor-muted">
+              Total: {documents.length} | Ready: {documentCounters.ready} | Failed: {documentCounters.failed} | Indexing: {documentCounters.indexing}
+            </span>
+          </div>
+
+          <div className="mb-4 grid gap-2 md:grid-cols-4">
+            <input
+              value={listSearchFilter}
+              onChange={(event) => setListSearchFilter(event.target.value)}
+              className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400"
+              placeholder="Filtro por nombre"
+            />
+            <input
+              value={listCategoryFilter}
+              onChange={(event) => setListCategoryFilter(event.target.value)}
+              className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400"
+              placeholder="Filtro por categoría"
+            />
+            <select
+              value={listStatusFilter}
+              onChange={(event) => setListStatusFilter(event.target.value as DocumentStatusFilter)}
+              className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400"
+            >
+              <option value="all">Todos los estados</option>
+              <option value="queued">queued</option>
+              <option value="indexing">indexing</option>
+              <option value="ready">ready</option>
+              <option value="failed">failed</option>
+            </select>
+            <select
+              value={String(pageLimit)}
+              onChange={(event) => setPageLimit(Number(event.target.value) || 50)}
+              className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400"
+            >
+              <option value="25">25 por página</option>
+              <option value="50">50 por página</option>
+              <option value="100">100 por página</option>
+              <option value="200">200 por página</option>
+            </select>
           </div>
 
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-700 text-sm">
               <thead>
                 <tr className="text-left text-thor-muted">
+                  <th className="px-3 py-2 font-medium">ID</th>
                   <th className="px-3 py-2 font-medium">Nombre</th>
-                  <th className="px-3 py-2 font-medium">Fecha</th>
+                  <th className="px-3 py-2 font-medium">Categoria</th>
+                  <th className="px-3 py-2 font-medium">Subido</th>
+                  <th className="px-3 py-2 font-medium">Tamano</th>
+                  <th className="px-3 py-2 font-medium">Ruta archivo</th>
                   <th className="px-3 py-2 font-medium">Estado</th>
                   <th className="px-3 py-2 font-medium">Fragmentos</th>
                   <th className="px-3 py-2 font-medium">Acciones</th>
@@ -637,18 +743,22 @@ export default function AdminKnowledgePage() {
               <tbody className="divide-y divide-slate-800">
                 {documents.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-5 text-thor-muted" colSpan={5}>
+                    <td className="px-3 py-5 text-thor-muted" colSpan={9}>
                       No hay documentos indexados.
                     </td>
                   </tr>
                 ) : (
                   documents.map((document) => (
                     <tr key={document.id} className="transition hover:bg-slate-800/40">
+                      <td className="px-3 py-3 text-xs text-thor-muted">{document.id.slice(0, 8)}...</td>
                       <td className="px-3 py-3">
                         <div className="font-medium text-thor-text">{document.name}</div>
-                        <div className="text-xs text-thor-muted">{document.category}</div>
+                        <div className="text-xs text-thor-muted">{document.indexedAt ? `Indexado: ${formatDate(document.indexedAt)}` : "Sin indexar"}</div>
                       </td>
-                      <td className="px-3 py-3 text-thor-muted">{formatDate(document.indexedAt || document.createdAt)}</td>
+                      <td className="px-3 py-3 text-thor-muted">{document.category}</td>
+                      <td className="px-3 py-3 text-thor-muted">{formatDate(document.uploadedAt || document.createdAt)}</td>
+                      <td className="px-3 py-3 text-thor-muted">{formatFileSize(document.fileSizeBytes)}</td>
+                      <td className="px-3 py-3 text-xs text-thor-muted">{document.filePath || "-"}</td>
                       <td className="px-3 py-3">
                         <span className={`inline-flex rounded-full px-2 py-1 text-xs ${getStatusClasses(document.status)}`}>
                           {document.status}
@@ -683,7 +793,7 @@ export default function AdminKnowledgePage() {
                           <button
                             type="button"
                             onClick={() => {
-                              void deleteDocument(document.id);
+                              askDeleteDocument(document);
                             }}
                             className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/20"
                             disabled={isBusy}
@@ -706,6 +816,39 @@ export default function AdminKnowledgePage() {
           </div>
         </section>
       </div>
+
+      {pendingDeleteDocument ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-rose-500/30 bg-slate-900 p-5 shadow-2xl">
+            <h3 className="text-lg font-semibold text-rose-200">Confirmar eliminacion</h3>
+            <p className="mt-2 text-sm text-thor-muted">
+              Vas a eliminar el documento <span className="font-medium text-thor-text">{pendingDeleteDocument.name}</span> y su archivo persistente.
+            </p>
+            <p className="mt-1 text-xs text-thor-muted">Ruta: {pendingDeleteDocument.filePath || "-"}</p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteDocument(null)}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
+                disabled={isBusy}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void deleteDocument(pendingDeleteDocument.id);
+                }}
+                className="inline-flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200 hover:bg-rose-500/20"
+                disabled={isBusy}
+              >
+                <Trash2 size={14} />
+                Eliminar definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

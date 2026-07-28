@@ -10,6 +10,9 @@ export type KnowledgeDocument = {
   sourceType: SourceType;
   status: IndexStatus;
   chunkCount: number;
+  fileSizeBytes: number;
+  filePath: string;
+  uploadedAt: string;
   indexedAt: string | null;
   createdAt: string;
   updatedAt: string;

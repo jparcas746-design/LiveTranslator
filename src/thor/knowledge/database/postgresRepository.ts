@@ -11,6 +11,7 @@ import {
   type CreateKnowledgeChunkInput,
   type CreateKnowledgeDocumentInput,
   type KnowledgeRepository,
+  type ListKnowledgeDocumentsQuery,
 } from "@/thor/knowledge/database/repository";
 import { thorLogger } from "@/thor/utils/logger";
 
@@ -50,11 +51,30 @@ function mapDocumentRow(row: any): KnowledgeDocument {
     sourceType: row.source_type,
     status: row.status,
     chunkCount: Number(row.chunk_count || 0),
+    fileSizeBytes: Number(row.file_size_bytes || 0),
+    filePath: row.file_path || "",
+    uploadedAt: row.uploaded_at ? new Date(row.uploaded_at).toISOString() : new Date().toISOString(),
     indexedAt: row.indexed_at ? new Date(row.indexed_at).toISOString() : null,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
     metadata: row.metadata || {},
   };
+}
+
+function sanitizeLimit(value: number | undefined) {
+  if (!Number.isFinite(value)) {
+    return 50;
+  }
+
+  return Math.max(1, Math.min(200, Math.floor(value || 50)));
+}
+
+function sanitizeOffset(value: number | undefined) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor(value || 0));
 }
 
 async function withTransaction<T>(task: (client: PoolClient) => Promise<T>) {
@@ -79,14 +99,26 @@ export const postgresKnowledgeRepository: KnowledgeRepository = {
     return Boolean(getPool());
   },
 
-  async listDocuments() {
+  async listDocuments(query?: ListKnowledgeDocumentsQuery) {
+    const limit = sanitizeLimit(query?.limit);
+    const offset = sanitizeOffset(query?.offset);
+    const category = query?.category?.trim() || null;
+    const status = query?.status || null;
+    const search = query?.search?.trim() || null;
+
     const connection = requirePool();
     const result = await connection.query(
       `
-      SELECT id, name, category, source_type, status, chunk_count, indexed_at, created_at, updated_at, metadata
+      SELECT id, name, category, source_type, status, chunk_count, file_size_bytes, file_path, uploaded_at, indexed_at, created_at, updated_at, metadata
       FROM thor_knowledge_documents
-      ORDER BY created_at DESC
+      WHERE ($1::text IS NULL OR category = $1::text)
+        AND ($2::text IS NULL OR status = $2::text)
+        AND ($3::text IS NULL OR name ILIKE '%' || $3::text || '%')
+      ORDER BY uploaded_at DESC
+      LIMIT $4 OFFSET $5
       `
+      ,
+      [category, status, search, limit, offset]
     );
 
     return result.rows.map(mapDocumentRow);
@@ -96,11 +128,20 @@ export const postgresKnowledgeRepository: KnowledgeRepository = {
     const connection = requirePool();
     const result = await connection.query(
       `
-      INSERT INTO thor_knowledge_documents (name, category, source_type, status, metadata)
-      VALUES ($1, $2, $3, 'queued', $4)
-      RETURNING id, name, category, source_type, status, chunk_count, indexed_at, created_at, updated_at, metadata
+      INSERT INTO thor_knowledge_documents
+        (name, category, source_type, status, file_size_bytes, file_path, uploaded_at, metadata)
+      VALUES ($1, $2, $3, 'queued', $4, $5, $6::timestamptz, $7)
+      RETURNING id, name, category, source_type, status, chunk_count, file_size_bytes, file_path, uploaded_at, indexed_at, created_at, updated_at, metadata
       `,
-      [input.name, input.category, input.sourceType, input.metadata]
+      [
+        input.name,
+        input.category,
+        input.sourceType,
+        input.fileSizeBytes,
+        input.filePath,
+        input.uploadedAt,
+        input.metadata,
+      ]
     );
 
     return mapDocumentRow(result.rows[0]);
@@ -114,7 +155,7 @@ export const postgresKnowledgeRepository: KnowledgeRepository = {
       SET category = $2,
           updated_at = NOW()
       WHERE id = $1
-      RETURNING id, name, category, source_type, status, chunk_count, indexed_at, created_at, updated_at, metadata
+      RETURNING id, name, category, source_type, status, chunk_count, file_size_bytes, file_path, uploaded_at, indexed_at, created_at, updated_at, metadata
       `,
       [documentId, category]
     );
@@ -230,7 +271,7 @@ export const postgresKnowledgeRepository: KnowledgeRepository = {
     const connection = requirePool();
     const result = await connection.query(
       `
-      SELECT id, name, category, source_type, status, chunk_count, indexed_at, created_at, updated_at, metadata
+      SELECT id, name, category, source_type, status, chunk_count, file_size_bytes, file_path, uploaded_at, indexed_at, created_at, updated_at, metadata
       FROM thor_knowledge_documents
       WHERE id = $1
       `,

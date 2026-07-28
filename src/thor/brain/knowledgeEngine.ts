@@ -2,6 +2,8 @@ import { KnowledgeIngestPipeline } from "@/thor/knowledge/ingest/pipeline";
 import { KnowledgeSearchEngine } from "@/thor/knowledge/search/searchEngine";
 import { resolveKnowledgeRepository } from "@/thor/knowledge/database/resolveRepository";
 import type { IngestDocumentInput, SearchQuery } from "@/thor/knowledge/types";
+import { createRepositoryNotConfiguredError, type ListKnowledgeDocumentsQuery } from "@/thor/knowledge/database/repository";
+import { createStorageNotConfiguredError, resolveKnowledgeSourceStorage } from "@/thor/knowledge/storage";
 
 export class KnowledgeEngine {
   private readonly repository = resolveKnowledgeRepository();
@@ -9,16 +11,23 @@ export class KnowledgeEngine {
   private readonly searchEngine = new KnowledgeSearchEngine(this.repository);
 
   isConfigured() {
-    return this.repository.isConfigured();
+    return this.repository.isConfigured() && resolveKnowledgeSourceStorage().isConfigured();
   }
 
   ensureConfigured() {
-    return;
+    if (!this.repository.isConfigured()) {
+      throw createRepositoryNotConfiguredError();
+    }
+
+    const storage = resolveKnowledgeSourceStorage();
+    if (!storage.isConfigured()) {
+      throw createStorageNotConfiguredError();
+    }
   }
 
-  async listDocuments() {
+  async listDocuments(query?: ListKnowledgeDocumentsQuery) {
     this.ensureConfigured();
-    return this.repository.listDocuments();
+    return this.repository.listDocuments(query);
   }
 
   async ingest(input: IngestDocumentInput) {
@@ -28,6 +37,13 @@ export class KnowledgeEngine {
 
   async deleteDocument(documentId: string) {
     this.ensureConfigured();
+    const existing = await this.repository.getDocumentById(documentId);
+    if (!existing) {
+      throw new Error("Document not found");
+    }
+
+    const storage = resolveKnowledgeSourceStorage();
+    await storage.deleteSource(existing.filePath);
     return this.repository.deleteDocument(documentId);
   }
 

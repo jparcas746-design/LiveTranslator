@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getKnowledgeEngine } from "@/thor/brain/knowledgeEngine";
 import { requireAdmin } from "@/thor/utils/adminAuth";
 import { toApiError } from "@/thor/utils/httpErrors";
-import type { SourceType } from "@/thor/knowledge/types";
+import type { IndexStatus, SourceType } from "@/thor/knowledge/types";
 
 export const runtime = "nodejs";
 
@@ -14,12 +14,34 @@ function resolveSourceType(fileName: string): SourceType | null {
   return null;
 }
 
+const ALLOWED_STATUSES: Record<IndexStatus, true> = {
+  queued: true,
+  indexing: true,
+  ready: true,
+  failed: true,
+};
+
 export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const limitRaw = Number(url.searchParams.get("limit") || "50");
+  const offsetRaw = Number(url.searchParams.get("offset") || "0");
+  const limit = Number.isFinite(limitRaw) ? limitRaw : 50;
+  const offset = Number.isFinite(offsetRaw) ? offsetRaw : 0;
+  const category = url.searchParams.get("category")?.trim() || undefined;
+  const statusParam = url.searchParams.get("status")?.trim() || "";
+  const status = (statusParam && statusParam in ALLOWED_STATUSES ? (statusParam as IndexStatus) : undefined);
+  const search = url.searchParams.get("search")?.trim() || undefined;
+
   console.log("ADMIN_KNOWLEDGE_GET_START", {
     time: new Date().toISOString(),
     method: request.method,
-    path: new URL(request.url).pathname,
+    path: url.pathname,
     accept: request.headers.get("accept") || "",
+    limit,
+    offset,
+    category,
+    status,
+    search,
   });
   const denied = requireAdmin(request);
   if (denied) {
@@ -29,7 +51,13 @@ export async function GET(request: Request) {
 
   try {
     const engine = getKnowledgeEngine();
-    const documents = await engine.listDocuments();
+    const documents = await engine.listDocuments({
+      limit,
+      offset,
+      category,
+      status,
+      search,
+    });
 
     console.log("ADMIN_KNOWLEDGE_GET_OK", {
       total: documents.length,
@@ -37,6 +65,7 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json({
+      filters: { limit, offset, category: category || null, status: status || null, search: search || null },
       documents,
     });
   } catch (error) {

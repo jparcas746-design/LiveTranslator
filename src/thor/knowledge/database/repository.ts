@@ -12,7 +12,18 @@ export type CreateKnowledgeDocumentInput = {
   name: string;
   category: string;
   sourceType: SourceType;
+  fileSizeBytes: number;
+  filePath: string;
+  uploadedAt: string;
   metadata: Record<string, unknown>;
+};
+
+export type ListKnowledgeDocumentsQuery = {
+  limit?: number;
+  offset?: number;
+  category?: string;
+  status?: IndexStatus;
+  search?: string;
 };
 
 export type CreateKnowledgeChunkInput = {
@@ -26,7 +37,7 @@ export type CreateKnowledgeChunkInput = {
 
 export type KnowledgeRepository = {
   isConfigured: () => boolean;
-  listDocuments: () => Promise<KnowledgeDocument[]>;
+  listDocuments: (query?: ListKnowledgeDocumentsQuery) => Promise<KnowledgeDocument[]>;
   createDocument: (input: CreateKnowledgeDocumentInput) => Promise<KnowledgeDocument>;
   updateDocumentCategory: (documentId: string, category: string) => Promise<KnowledgeDocument | null>;
   updateDocumentStatus: (documentId: string, status: IndexStatus, errorMessage?: string | null) => Promise<void>;

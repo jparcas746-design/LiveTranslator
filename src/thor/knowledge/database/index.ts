@@ -5,4 +5,5 @@ export type {
   KnowledgeRepository,
   CreateKnowledgeChunkInput,
   CreateKnowledgeDocumentInput,
+  ListKnowledgeDocumentsQuery,
 } from "@/thor/knowledge/database/repository";
