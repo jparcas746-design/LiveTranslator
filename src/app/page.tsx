@@ -31,7 +31,9 @@ export default function HomePage() {
   const [targetLanguage, setTargetLanguage] = useState("en-US");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [requestInFlight, setRequestInFlight] = useState(false);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const requestQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [lastTranslation, setLastTranslation] = useState<{
     originalText: string;
     sourceLanguage: string;
@@ -115,6 +117,24 @@ export default function HomePage() {
     currentUtteranceRef.current = null;
     setIsSpeaking(false);
     setIsPaused(false);
+  }
+
+  function enqueueApiRequest<T>(task: () => Promise<T>): Promise<T> {
+    const runTask = async () => {
+      setRequestInFlight(true);
+      try {
+        return await task();
+      } finally {
+        setRequestInFlight(false);
+      }
+    };
+
+    const chained = requestQueueRef.current.then(runTask, runTask);
+    requestQueueRef.current = chained.then(
+      () => undefined,
+      () => undefined
+    );
+    return chained;
   }
 
   function startListening() {
@@ -374,49 +394,51 @@ export default function HomePage() {
     setSourceText(trimmed);
     setTranslatedText("Translating...");
 
-    try {
-      const res = await fetch("/api/translate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: "user",
-              content: trimmed,
-            },
-          ],
-          text: trimmed,
-          responseStyle: responseStyle,
-          translationMode: true,
+    await enqueueApiRequest(async () => {
+      try {
+        const res = await fetch("/api/translate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messages: [
+              {
+                role: "user",
+                content: trimmed,
+              },
+            ],
+            text: trimmed,
+            responseStyle: responseStyle,
+            translationMode: true,
+            sourceLanguage: resolvedSourceLanguage,
+            targetLanguage,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`Error del servidor: ${res.status}`);
+        }
+
+        const data = await res.json();
+        const translation = data.response || "No translation returned.";
+
+        setTranslatedText(translation);
+        setLastTranslation({
+          originalText: trimmed,
           sourceLanguage: resolvedSourceLanguage,
           targetLanguage,
-        }),
-      });
+          translatedText: translation,
+        });
 
-      if (!res.ok) {
-        throw new Error(`Error del servidor: ${res.status}`);
+        if (fromVoice) {
+          const translationLanguage = getSpeechLanguageCode(targetLanguage);
+          speak(translation, translationLanguage);
+        }
+      } catch (error) {
+        setTranslatedText("Error: " + String(error));
       }
-
-      const data = await res.json();
-      const translation = data.response || "No translation returned.";
-
-      setTranslatedText(translation);
-      setLastTranslation({
-        originalText: trimmed,
-        sourceLanguage: resolvedSourceLanguage,
-        targetLanguage,
-        translatedText: translation,
-      });
-
-      if (fromVoice) {
-        const translationLanguage = getSpeechLanguageCode(targetLanguage);
-        speak(translation, translationLanguage);
-      }
-    } catch (error) {
-      setTranslatedText("Error: " + String(error));
-    }
+    });
   }
 
   async function retranslatePrevious() {
@@ -430,47 +452,49 @@ export default function HomePage() {
     setSourceText(lastTranslation.originalText);
     setTranslatedText("Translating...");
 
-    try {
-      const res = await fetch("/api/translate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: "user",
-              content: lastTranslation.originalText,
-            },
-          ],
-          text: lastTranslation.originalText,
-          responseStyle: responseStyle,
-          translationMode: true,
+    await enqueueApiRequest(async () => {
+      try {
+        const res = await fetch("/api/translate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messages: [
+              {
+                role: "user",
+                content: lastTranslation.originalText,
+              },
+            ],
+            text: lastTranslation.originalText,
+            responseStyle: responseStyle,
+            translationMode: true,
+            sourceLanguage: nextSourceLanguage,
+            targetLanguage: nextTargetLanguage,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`Error del servidor: ${res.status}`);
+        }
+
+        const data = await res.json();
+        const translation = data.response || "No translation returned.";
+
+        setTranslatedText(translation);
+        setLastTranslation({
+          originalText: lastTranslation.originalText,
           sourceLanguage: nextSourceLanguage,
           targetLanguage: nextTargetLanguage,
-        }),
-      });
+          translatedText: translation,
+        });
 
-      if (!res.ok) {
-        throw new Error(`Error del servidor: ${res.status}`);
+        const translationLanguage = getSpeechLanguageCode(nextTargetLanguage);
+        speak(translation, translationLanguage);
+      } catch (error) {
+        setTranslatedText("Error: " + String(error));
       }
-
-      const data = await res.json();
-      const translation = data.response || "No translation returned.";
-
-      setTranslatedText(translation);
-      setLastTranslation({
-        originalText: lastTranslation.originalText,
-        sourceLanguage: nextSourceLanguage,
-        targetLanguage: nextTargetLanguage,
-        translatedText: translation,
-      });
-
-      const translationLanguage = getSpeechLanguageCode(nextTargetLanguage);
-      speak(translation, translationLanguage);
-    } catch (error) {
-      setTranslatedText("Error: " + String(error));
-    }
+    });
   }
 
   async function handleDictionaryLookup() {
@@ -490,33 +514,35 @@ export default function HomePage() {
     setDictionaryError(null);
     setDictionaryResult(null);
 
-    try {
-      const res = await fetch("/api/translate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text: normalizedWord,
-          responseStyle,
-          translationMode: false,
-          dictionaryMode: true,
-          sourceLanguage: "es-ES",
-          targetLanguage: "en-US",
-        }),
-      });
+    await enqueueApiRequest(async () => {
+      try {
+        const res = await fetch("/api/translate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text: normalizedWord,
+            responseStyle,
+            translationMode: false,
+            dictionaryMode: true,
+            sourceLanguage: "es-ES",
+            targetLanguage: "en-US",
+          }),
+        });
 
-      if (!res.ok) {
-        throw new Error(`Error del servidor: ${res.status}`);
+        if (!res.ok) {
+          throw new Error(`Error del servidor: ${res.status}`);
+        }
+
+        const data = await res.json();
+        setDictionaryResult(data.response || "No dictionary entry returned.");
+      } catch (error) {
+        setDictionaryError("Error: " + String(error));
+      } finally {
+        setDictionaryLoading(false);
       }
-
-      const data = await res.json();
-      setDictionaryResult(data.response || "No dictionary entry returned.");
-    } catch (error) {
-      setDictionaryError("Error: " + String(error));
-    } finally {
-      setDictionaryLoading(false);
-    }
+    });
   }
 
   async function askAI(
@@ -547,53 +573,54 @@ export default function HomePage() {
 
     setText("");
 
-    try {
-      const res = await fetch("/api/translate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: newMessages,
-          responseStyle: responseStyle,
-        }),
-      });
+    await enqueueApiRequest(async () => {
+      try {
+        const res = await fetch("/api/translate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messages: newMessages,
+            responseStyle: responseStyle,
+          }),
+        });
 
-      if (!res.ok) {
-        throw new Error(
-          `Error del servidor: ${res.status}`
-        );
+        if (!res.ok) {
+          throw new Error(
+            `Error del servidor: ${res.status}`
+          );
+        }
+
+        const data = await res.json();
+
+        const aiResponse =
+          data.response ||
+          "ThorAI no devolvió respuesta.";
+
+        setMessages([
+          ...newMessages,
+          {
+            role: "assistant",
+            content: aiResponse,
+          },
+        ]);
+
+        if (fromVoice) {
+          speak(aiResponse);
+        }
+
+      } catch (error) {
+        setMessages([
+          ...newMessages,
+          {
+            role: "assistant",
+            content:
+              "Error: " + String(error),
+          },
+        ]);
       }
-
-      const data = await res.json();
-
-      const aiResponse =
-        data.response ||
-        "ThorAI no devolvió respuesta.";
-
-      setMessages([
-        ...newMessages,
-        {
-          role: "assistant",
-          content: aiResponse,
-        },
-      ]);
-
-      // Solo habla cuando viene del micrófono
-      if (fromVoice) {
-        speak(aiResponse);
-      }
-
-    } catch (error) {
-      setMessages([
-        ...newMessages,
-        {
-          role: "assistant",
-          content:
-            "Error: " + String(error),
-        },
-      ]);
-    }
+    });
   }
 
   const hasTranslationToPlay = Boolean(
@@ -841,7 +868,7 @@ export default function HomePage() {
                 value={dictionaryInput}
                 onChange={(e) => setDictionaryInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+                  if (e.key === "Enter" && !requestInFlight) {
                     e.preventDefault();
                     handleDictionaryLookup();
                   }
@@ -858,14 +885,14 @@ export default function HomePage() {
             </label>
             <button
               onClick={handleDictionaryLookup}
-              disabled={dictionaryLoading}
+              disabled={dictionaryLoading || requestInFlight}
               style={{
                 padding: "10px 14px",
                 borderRadius: "10px",
                 border: "1px solid #475569",
-                background: dictionaryLoading ? "#475569" : "#2563eb",
+                background: dictionaryLoading || requestInFlight ? "#475569" : "#2563eb",
                 color: "white",
-                cursor: dictionaryLoading ? "not-allowed" : "pointer",
+                cursor: dictionaryLoading || requestInFlight ? "not-allowed" : "pointer",
                 fontSize: "15px",
                 fontWeight: 600,
               }}
@@ -977,7 +1004,7 @@ export default function HomePage() {
                 value={sourceText}
                 onChange={(e) => setSourceText(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  if (e.key === "Enter" && !e.shiftKey && !requestInFlight) {
                     e.preventDefault();
                     handleTranslationSubmit();
                   }
@@ -1016,16 +1043,16 @@ export default function HomePage() {
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-start" }}>
               <button
                 onClick={retranslatePrevious}
-                disabled={!lastTranslation}
+                disabled={!lastTranslation || requestInFlight}
                 title="Re-translate previous text"
                 style={{
                   padding: "10px 14px",
                   borderRadius: "10px",
                   border: "1px solid #475569",
-                  background: lastTranslation ? "#7c3aed" : "#334155",
+                  background: lastTranslation && !requestInFlight ? "#7c3aed" : "#334155",
                   color: "white",
-                  cursor: lastTranslation ? "pointer" : "not-allowed",
-                  opacity: lastTranslation ? 1 : 0.7,
+                  cursor: lastTranslation && !requestInFlight ? "pointer" : "not-allowed",
+                  opacity: lastTranslation && !requestInFlight ? 1 : 0.7,
                   fontSize: "15px",
                   fontWeight: 600,
                 }}
@@ -1110,7 +1137,8 @@ export default function HomePage() {
             onKeyDown={(e) => {
               if (
                 e.key === "Enter" &&
-                !e.shiftKey
+                !e.shiftKey &&
+                !requestInFlight
               ) {
                 e.preventDefault();
                 askAI(undefined, false);
@@ -1130,17 +1158,20 @@ export default function HomePage() {
 
         <button
           onClick={startListening}
+          disabled={requestInFlight}
           title="Start voice input"
           style={{
             padding: "15px",
             borderRadius: "10px",
             border: "none",
-            background: listening
+            background: requestInFlight
+              ? "#475569"
+              : listening
               ? "#dc2626"
               : "#16a34a",
             color: "white",
             fontSize: "22px",
-            cursor: "pointer",
+            cursor: requestInFlight ? "not-allowed" : "pointer",
           }}
         >
           {listening ? "🔴🎤" : "🎤"}
@@ -1148,21 +1179,23 @@ export default function HomePage() {
 
         <button
           onClick={() => {
+            if (requestInFlight) return;
             if (mode === "translation") {
               handleTranslationSubmit();
             } else {
               askAI(undefined, false);
             }
           }}
+          disabled={requestInFlight}
           title={mode === "translation" ? "Translate" : "Send message"}
           style={{
             padding: "15px",
             borderRadius: "10px",
             border: "none",
-            background: "#2563eb",
+            background: requestInFlight ? "#475569" : "#2563eb",
             color: "white",
             fontSize: "22px",
-            cursor: "pointer",
+            cursor: requestInFlight ? "not-allowed" : "pointer",
           }}
         >
           ⚡
