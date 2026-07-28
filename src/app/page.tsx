@@ -4,14 +4,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpenText,
   Bot,
+  Command,
   Globe2,
+  History,
+  LayoutDashboard,
   Languages,
   Mic,
   Moon,
   Pause,
   Play,
+  Search,
   Send,
+  ShieldCheck,
   Sparkles,
+  Stars,
   Sun,
   X,
 } from "lucide-react";
@@ -697,32 +703,66 @@ export default function HomePage() {
 
   function getViewSubtitle() {
     if (mode === "translation") {
-      return "Translate, listen, save and share with fast actions.";
+      return "Translate with precision, context memory and voice controls.";
     }
     if (mode === "dictionary") {
-      return "Get concise bilingual definitions with educational structure.";
+      return "Research a single word deeply with concise bilingual guidance.";
     }
-    return "Ask, discuss and explore topics with your AI assistant.";
+    return "Think, draft and iterate with a focused AI conversation workspace.";
+  }
+
+  const favoritePreview = favorites.slice(0, 4);
+
+  function clearCurrentMode() {
+    if (mode === "chat") {
+      setMessages([]);
+      setText("");
+      showToast("info", "Chat cleared", "Conversation history was removed from the view.");
+      return;
+    }
+
+    if (mode === "translation") {
+      setSourceText("");
+      setTranslatedText("");
+      setLastTranslation(null);
+      stopSpeechAndReset();
+      showToast("info", "Translation reset", "Input and output were cleared.");
+      return;
+    }
+
+    setDictionaryInput("");
+    setDictionaryResult(null);
+    setDictionaryError(null);
+    showToast("info", "Dictionary reset", "Search content was cleared.");
   }
 
   if (!mounted) {
     return (
-      <main className="app-shell" aria-busy="true">
-        <div className="sidebar">
-          <Skeleton height={42} width="70%" />
-          <Skeleton height={44} />
-          <Skeleton height={44} />
-          <Skeleton height={44} />
-        </div>
-        <section className="content-area">
-          <header className="topbar">
-            <Skeleton height={20} width="38%" />
-            <Skeleton height={36} width="24%" />
-          </header>
-          <div className="workspace">
-            <Skeleton height={300} />
-            <Skeleton height={120} />
+      <main className="nova-shell nova-shell-loading" aria-busy="true">
+        <aside className="nova-sidebar">
+          <div className="nova-brand">
+            <Skeleton height={48} width="48px" />
+            <div style={{ display: "grid", gap: 8, width: "100%" }}>
+              <Skeleton height={16} width="65%" />
+              <Skeleton height={12} width="48%" />
+            </div>
           </div>
+          <Skeleton height={46} />
+          <Skeleton height={46} />
+          <Skeleton height={46} />
+        </aside>
+
+        <section className="nova-main">
+          <header className="nova-topbar">
+            <Skeleton height={20} width="240px" />
+            <Skeleton height={42} width="320px" />
+            <Skeleton height={42} width="180px" />
+          </header>
+
+          <section className="nova-workbench">
+            <Skeleton height={360} />
+            <Skeleton height={220} />
+          </section>
         </section>
       </main>
     );
@@ -732,64 +772,79 @@ export default function HomePage() {
     <>
       <ToastViewport toasts={toasts} onDismiss={removeToast} />
 
-      <main className="app-shell">
-        <aside className="sidebar" aria-label="Main navigation">
-          <div className="brand">
-            <div className="brand-mark">
+      <main className="nova-shell">
+        <aside className="nova-sidebar" aria-label="Main navigation">
+          <div className="nova-brand">
+            <div className="nova-brand-mark">
               <Sparkles size={20} />
             </div>
             <div>
-              <div className="brand-title">ThorAI Translate</div>
-              <div className="brand-subtitle">Premium multilingual workspace</div>
+              <div className="nova-brand-title">ThorAI Nexus</div>
+              <div className="nova-brand-subtitle">Language workspace 2026</div>
             </div>
           </div>
 
-          <div className="mode-list">
-            <span className="section-label">Workspace</span>
+          <div className="nova-nav-group">
+            <span className="nova-label">Workspace</span>
 
             <button
               type="button"
-              className={`mode-btn ${mode === "chat" ? "active" : ""}`}
+              className={`nova-nav-item ${mode === "chat" ? "active" : ""}`}
               onClick={() => {
                 stopSpeechAndReset();
                 setMode("chat");
               }}
               aria-pressed={mode === "chat"}
             >
-              <span>Chat Assistant</span>
-              <Bot size={16} />
+              <span className="nova-nav-icon">
+                <Bot size={16} />
+              </span>
+              <span className="nova-nav-text">
+                <strong>AI Chat</strong>
+                <small>Brainstorm and iterate</small>
+              </span>
             </button>
 
             <button
               type="button"
-              className={`mode-btn ${mode === "translation" ? "active" : ""}`}
+              className={`nova-nav-item ${mode === "translation" ? "active" : ""}`}
               onClick={() => {
                 stopSpeechAndReset();
                 setMode("translation");
               }}
               aria-pressed={mode === "translation"}
             >
-              <span>Translation</span>
-              <Languages size={16} />
+              <span className="nova-nav-icon">
+                <Languages size={16} />
+              </span>
+              <span className="nova-nav-text">
+                <strong>Translation Studio</strong>
+                <small>Live multilingual output</small>
+              </span>
             </button>
 
             <button
               type="button"
-              className={`mode-btn ${mode === "dictionary" ? "active" : ""}`}
+              className={`nova-nav-item ${mode === "dictionary" ? "active" : ""}`}
               onClick={() => {
                 stopSpeechAndReset();
                 setMode("dictionary");
               }}
               aria-pressed={mode === "dictionary"}
             >
-              <span>Dictionary</span>
-              <BookOpenText size={16} />
+              <span className="nova-nav-icon">
+                <BookOpenText size={16} />
+              </span>
+              <span className="nova-nav-text">
+                <strong>Dictionary</strong>
+                <small>Word-level depth</small>
+              </span>
             </button>
           </div>
 
-          <div className="style-list">
-            <span className="section-label">Response style</span>
-            <div className="inline-actions">
+          <div className="nova-control-card">
+            <span className="nova-label">Response style</span>
+            <div className="nova-style-grid">
               <Button
                 size="sm"
                 variant={responseStyle === "formal" ? "primary" : "secondary"}
@@ -814,8 +869,8 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="side-actions">
-            <span className="section-label">Actions</span>
+          <div className="nova-control-card">
+            <span className="nova-label">Quick controls</span>
             <Button
               type="button"
               size="md"
@@ -838,37 +893,92 @@ export default function HomePage() {
             </Button>
           </div>
 
-          <p className="footer-note">Keyboard friendly, responsive and optimized for production.</p>
+          <div className="nova-control-card">
+            <span className="nova-label">Favorites</span>
+            {favoritePreview.length === 0 ? (
+              <p className="nova-muted">Saved translations will appear here.</p>
+            ) : (
+              <div className="nova-favorites">
+                {favoritePreview.map((item, index) => (
+                  <button
+                    key={`${item}-${index}`}
+                    className="nova-favorite-item"
+                    type="button"
+                    onClick={() => {
+                      setTranslatedText(item);
+                      setMode("translation");
+                    }}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </aside>
 
-        <section className="content-area">
-          <header className="topbar">
-            <div>
-              <div className="topbar-title">{getViewTitle()}</div>
-              <div className="topbar-subtitle">{getViewSubtitle()}</div>
+        <section className="nova-main">
+          <header className="nova-topbar">
+            <div className="nova-topbar-title-wrap">
+              <div className="nova-kicker">
+                <LayoutDashboard size={14} />
+                Active module
+              </div>
+              <div className="nova-topbar-title">{getViewTitle()}</div>
+              <div className="nova-topbar-subtitle">{getViewSubtitle()}</div>
             </div>
 
-            <div className="topbar-actions">
-              <div className="chip">{getDirectionLabel()}</div>
-              {requestInFlight ? <div className="chip">Processing</div> : <div className="chip">Ready</div>}
+            <div className="nova-command-box" aria-hidden="true">
+              <Search size={15} />
+              <span>Search actions</span>
+              <kbd>
+                <Command size={12} />K
+              </kbd>
+            </div>
+
+            <div className="nova-topbar-actions">
+              <div className="nova-chip">
+                <Globe2 size={14} />
+                {getDirectionLabel()}
+              </div>
+              <div className="nova-chip nova-chip-status">
+                <ShieldCheck size={14} />
+                {requestInFlight ? "Synchronizing" : "Ready"}
+              </div>
+              <Button type="button" variant="ghost" size="sm" onClick={clearCurrentMode}>
+                Clear view
+              </Button>
             </div>
           </header>
 
-          <div className="workspace">
+          {requestInFlight ? (
+            <div className="nova-progress" aria-hidden="true">
+              <div className="nova-progress-bar" />
+            </div>
+          ) : null}
+
+          <div className="nova-workbench">
             {mode === "chat" ? (
-              <section className="panel chat-container fade-in">
+              <section className="panel nova-chat-panel fade-in">
                 <div className="panel-head">
-                  <h3>Conversation</h3>
-                  <div className="quick-meta">
-                    <span className="chip">{messages.length} messages</span>
-                    <span className="chip">Style: {responseStyle}</span>
+                  <h3>Conversation stream</h3>
+                  <div className="nova-meta-row">
+                    <span className="nova-chip">{messages.length} messages</span>
+                    <span className="nova-chip">Style: {responseStyle}</span>
+                    <span className="nova-chip">
+                      <History size={14} /> Live context
+                    </span>
                   </div>
                 </div>
 
                 <div className="chat-log" ref={chatLogRef}>
                   {messages.length === 0 ? (
-                    <div className="empty-state">
-                      Ask anything to start your conversation.
+                    <div className="empty-state nova-empty-state">
+                      <Stars size={22} />
+                      <div>
+                        <strong>Start a high-context conversation</strong>
+                        <p>Ask for translations, summaries, language drills or nuanced explanations.</p>
+                      </div>
                     </div>
                   ) : (
                     messages.map((msg, index) => (
@@ -879,15 +989,15 @@ export default function HomePage() {
                   {requestInFlight ? (
                     <div className="message-row message-row-assistant">
                       <div className="message-bubble message-bubble-assistant" aria-hidden="true">
-                        <Skeleton height={14} width="130px" />
+                        <Skeleton height={14} width="180px" />
                       </div>
                     </div>
                   ) : null}
                 </div>
 
-                <div className="input-row">
+                <div className="nova-chat-composer">
                   <label className="field-label" htmlFor="chat-input">
-                    Message
+                    Compose
                     <textarea
                       id="chat-input"
                       className="text-area"
@@ -899,123 +1009,12 @@ export default function HomePage() {
                           void askAI(undefined, false);
                         }
                       }}
-                      placeholder="Ask for translations, explanations, code or ideas..."
+                      placeholder="Write a prompt. Shift+Enter for a new line."
                       aria-label="Chat message input"
                     />
                   </label>
 
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="lg"
-                    leftIcon={<Send size={16} />}
-                    onClick={() => {
-                      if (requestInFlight) return;
-                      void askAI(undefined, false);
-                    }}
-                    disabled={requestInFlight}
-                    loading={requestInFlight}
-                  >
-                    Send message
-                  </Button>
-                </div>
-              </section>
-            ) : null}
-
-            {mode === "translation" ? (
-              <section className="panel fade-in">
-                <div className="panel-head">
-                  <h3>Translation Studio</h3>
-                  <div className="quick-meta">
-                    <span className="chip">{getDirectionLabel()}</span>
-                    <span className="chip">Favorites: {favorites.length}</span>
-                  </div>
-                </div>
-
-                <div style={{ padding: "14px", display: "grid", gap: "14px" }}>
-                  <div className="translation-grid">
-                    <label className="field-label" htmlFor="source-language">
-                      Source language
-                      <select
-                        id="source-language"
-                        className="select"
-                        value={sourceLanguage}
-                        onChange={(event) => setSourceLanguage(event.target.value)}
-                        aria-label="Source language"
-                      >
-                        <option value="auto">Auto detect</option>
-                        {languages.map((language) => (
-                          <option key={language.code} value={language.code}>
-                            {language.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="field-label" htmlFor="target-language">
-                      Target language
-                      <select
-                        id="target-language"
-                        className="select"
-                        value={targetLanguage}
-                        onChange={(event) => setTargetLanguage(event.target.value)}
-                        aria-label="Target language"
-                      >
-                        {languages.map((language) => (
-                          <option key={language.code} value={language.code}>
-                            {language.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
-                  <label className="field-label" htmlFor="translation-source">
-                    Source text
-                    <textarea
-                      id="translation-source"
-                      className="text-area"
-                      value={sourceText}
-                      onChange={(event) => setSourceText(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey && !requestInFlight) {
-                          event.preventDefault();
-                          void handleTranslationSubmit();
-                        }
-                      }}
-                      placeholder="Type or dictate text to translate..."
-                      aria-label="Translation source input"
-                    />
-                  </label>
-
-                  <div className="inline-actions">
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="md"
-                      leftIcon={<Languages size={16} />}
-                      onClick={() => {
-                        void handleTranslationSubmit();
-                      }}
-                      disabled={requestInFlight}
-                      loading={requestInFlight}
-                    >
-                      Translate
-                    </Button>
-
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="md"
-                      leftIcon={<Globe2 size={16} />}
-                      onClick={() => {
-                        void retranslatePrevious();
-                      }}
-                      disabled={!lastTranslation || requestInFlight}
-                    >
-                      Re-translate
-                    </Button>
-
+                  <div className="nova-composer-actions">
                     <Button
                       type="button"
                       variant="secondary"
@@ -1024,10 +1023,138 @@ export default function HomePage() {
                       onClick={startListening}
                       disabled={requestInFlight}
                     >
-                      Voice translate
+                      Dictate
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="lg"
+                      leftIcon={<Send size={16} />}
+                      onClick={() => {
+                        if (requestInFlight) return;
+                        void askAI(undefined, false);
+                      }}
+                      disabled={requestInFlight}
+                      loading={requestInFlight}
+                    >
+                      Send
                     </Button>
                   </div>
+                </div>
+              </section>
+            ) : null}
 
+            {mode === "translation" ? (
+              <section className="nova-grid fade-in">
+                <section className="panel nova-editor-card">
+                  <div className="panel-head">
+                    <h3>Translation console</h3>
+                    <div className="nova-meta-row">
+                      <span className="nova-chip">{getDirectionLabel()}</span>
+                      <span className="nova-chip">{favorites.length} favorites</span>
+                    </div>
+                  </div>
+
+                  <div className="nova-card-body">
+                    <div className="translation-grid">
+                      <label className="field-label" htmlFor="source-language">
+                        Source language
+                        <select
+                          id="source-language"
+                          className="select"
+                          value={sourceLanguage}
+                          onChange={(event) => setSourceLanguage(event.target.value)}
+                          aria-label="Source language"
+                        >
+                          <option value="auto">Auto detect</option>
+                          {languages.map((language) => (
+                            <option key={language.code} value={language.code}>
+                              {language.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="field-label" htmlFor="target-language">
+                        Target language
+                        <select
+                          id="target-language"
+                          className="select"
+                          value={targetLanguage}
+                          onChange={(event) => setTargetLanguage(event.target.value)}
+                          aria-label="Target language"
+                        >
+                          {languages.map((language) => (
+                            <option key={language.code} value={language.code}>
+                              {language.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <label className="field-label" htmlFor="source-language">
+                      Input text
+                      <textarea
+                        id="translation-source"
+                        className="text-area"
+                        value={sourceText}
+                        onChange={(event) => setSourceText(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && !event.shiftKey && !requestInFlight) {
+                            event.preventDefault();
+                            void handleTranslationSubmit();
+                          }
+                        }}
+                        placeholder="Paste or dictate a sentence, note or paragraph."
+                        aria-label="Translation source input"
+                      />
+                    </label>
+
+                    <div className="inline-actions">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="md"
+                        leftIcon={<Languages size={16} />}
+                        onClick={() => {
+                          void handleTranslationSubmit();
+                        }}
+                        disabled={requestInFlight}
+                        loading={requestInFlight}
+                      >
+                        Translate
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="md"
+                        leftIcon={<Globe2 size={16} />}
+                        onClick={() => {
+                          void retranslatePrevious();
+                        }}
+                        disabled={!lastTranslation || requestInFlight}
+                      >
+                        Re-translate
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="md"
+                        leftIcon={<Mic size={16} />}
+                        onClick={startListening}
+                        disabled={requestInFlight}
+                      >
+                        Voice translate
+                      </Button>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="nova-stack">
                   <TranslationResultCard
                     title="Result"
                     value={translatedText}
@@ -1043,129 +1170,131 @@ export default function HomePage() {
                     onListen={playTranslatedResult}
                   />
 
-                  {translatedText.trim() && !translatedText.startsWith("Error:") ? (
-                    <div className="inline-actions">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        leftIcon={<Play size={14} />}
-                        onClick={playTranslatedResult}
-                      >
-                        Play
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        leftIcon={<Pause size={14} />}
-                        onClick={pausePlayback}
-                        disabled={!isSpeaking || isPaused}
-                      >
-                        Pause
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        leftIcon={<Play size={14} />}
-                        onClick={resumePlayback}
-                        disabled={!isPaused}
-                      >
-                        Resume
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="danger"
-                        leftIcon={<X size={14} />}
-                        onClick={stopPlayback}
-                      >
-                        Stop
-                      </Button>
+                  <section className="panel nova-playback-card">
+                    <div className="panel-head">
+                      <h3>Playback controls</h3>
+                      <span className="nova-chip">Output voice</span>
                     </div>
-                  ) : null}
-                </div>
+                    <div className="nova-card-body">
+                      <div className="inline-actions">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          leftIcon={<Play size={14} />}
+                          onClick={playTranslatedResult}
+                          disabled={!translatedText.trim() || translatedText.startsWith("Error:")}
+                        >
+                          Play
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          leftIcon={<Pause size={14} />}
+                          onClick={pausePlayback}
+                          disabled={!isSpeaking || isPaused}
+                        >
+                          Pause
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          leftIcon={<Play size={14} />}
+                          onClick={resumePlayback}
+                          disabled={!isPaused}
+                        >
+                          Resume
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="danger"
+                          leftIcon={<X size={14} />}
+                          onClick={stopPlayback}
+                        >
+                          Stop
+                        </Button>
+                      </div>
+                    </div>
+                  </section>
+                </section>
               </section>
             ) : null}
 
             {mode === "dictionary" ? (
-              <section className="panel fade-in">
-                <div className="panel-head">
-                  <h3>Dictionary Lookup</h3>
-                  <span className="chip">One word at a time</span>
-                </div>
-
-                <div style={{ padding: "14px", display: "grid", gap: "12px" }}>
-                  <label className="field-label" htmlFor="dictionary-input">
-                    Word
-                    <input
-                      id="dictionary-input"
-                      className="text-input"
-                      value={dictionaryInput}
-                      onChange={(event) => setDictionaryInput(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !requestInFlight) {
-                          event.preventDefault();
-                          void handleDictionaryLookup();
-                        }
-                      }}
-                      placeholder="house"
-                    />
-                  </label>
-
-                  <div className="inline-actions">
-                    <Button
-                      type="button"
-                      variant="primary"
-                      leftIcon={<BookOpenText size={16} />}
-                      onClick={() => {
-                        void handleDictionaryLookup();
-                      }}
-                      disabled={requestInFlight || dictionaryLoading}
-                      loading={requestInFlight || dictionaryLoading}
-                    >
-                      Look up
-                    </Button>
+              <section className="nova-grid fade-in">
+                <section className="panel nova-editor-card">
+                  <div className="panel-head">
+                    <h3>Dictionary lookup</h3>
+                    <span className="nova-chip">One word only</span>
                   </div>
 
-                  {dictionaryError ? <div className="empty-state">{dictionaryError}</div> : null}
+                  <div className="nova-card-body">
+                    <label className="field-label" htmlFor="dictionary-input">
+                      Word
+                      <input
+                        id="dictionary-input"
+                        className="text-input"
+                        value={dictionaryInput}
+                        onChange={(event) => setDictionaryInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && !requestInFlight) {
+                            event.preventDefault();
+                            void handleDictionaryLookup();
+                          }
+                        }}
+                        placeholder="house"
+                      />
+                    </label>
 
-                  {dictionaryLoading ? (
-                    <div className="panel" style={{ padding: "12px", display: "grid", gap: "8px" }}>
-                      <Skeleton height={14} width="52%" />
-                      <Skeleton height={14} />
-                      <Skeleton height={14} width="88%" />
-                      <Skeleton height={14} width="67%" />
+                    <div className="inline-actions">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        leftIcon={<BookOpenText size={16} />}
+                        onClick={() => {
+                          void handleDictionaryLookup();
+                        }}
+                        disabled={requestInFlight || dictionaryLoading}
+                        loading={requestInFlight || dictionaryLoading}
+                      >
+                        Look up
+                      </Button>
                     </div>
-                  ) : null}
 
-                  {dictionaryResult ? (
-                    <div className="translation-output panel">{dictionaryResult}</div>
-                  ) : null}
-                </div>
+                    {dictionaryError ? <div className="empty-state">{dictionaryError}</div> : null}
+
+                    {dictionaryLoading ? (
+                      <div className="panel nova-loading-panel">
+                        <Skeleton height={14} width="52%" />
+                        <Skeleton height={14} />
+                        <Skeleton height={14} width="88%" />
+                        <Skeleton height={14} width="67%" />
+                      </div>
+                    ) : null}
+
+                    {dictionaryResult ? (
+                      <div className="translation-output panel">{dictionaryResult}</div>
+                    ) : null}
+                  </div>
+                </section>
+
+                <section className="panel nova-info-card">
+                  <div className="panel-head">
+                    <h3>Lookup tips</h3>
+                    <span className="nova-chip">Editorial mode</span>
+                  </div>
+                  <div className="nova-card-body">
+                    <ul className="nova-tips-list">
+                      <li>Use singular forms for cleaner lexical entries.</li>
+                      <li>Try short nouns or verbs to get richer examples.</li>
+                      <li>Switch to translation mode for full sentence context.</li>
+                    </ul>
+                  </div>
+                </section>
               </section>
-            ) : null}
-
-            {requestInFlight ? (
-              <div
-                style={{
-                  height: "4px",
-                  borderRadius: "999px",
-                  overflow: "hidden",
-                  background: "color-mix(in srgb, var(--bg-soft) 65%, transparent)",
-                }}
-                aria-hidden="true"
-              >
-                <div
-                  style={{
-                    width: "40%",
-                    height: "100%",
-                    background: "linear-gradient(90deg, var(--primary), #22c55e)",
-                    animation: "shimmer 1.25s linear infinite",
-                  }}
-                />
-              </div>
             ) : null}
           </div>
         </section>
