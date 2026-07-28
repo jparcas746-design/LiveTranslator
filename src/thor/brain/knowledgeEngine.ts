@@ -1,26 +1,24 @@
 import { KnowledgeIngestPipeline } from "@/thor/knowledge/ingest/pipeline";
 import { KnowledgeSearchEngine } from "@/thor/knowledge/search/searchEngine";
-import { postgresKnowledgeRepository } from "@/thor/knowledge/database/postgresRepository";
-import { createRepositoryNotConfiguredError } from "@/thor/knowledge/database/repository";
+import { resolveKnowledgeRepository } from "@/thor/knowledge/database/resolveRepository";
 import type { IngestDocumentInput, SearchQuery } from "@/thor/knowledge/types";
 
 export class KnowledgeEngine {
-  private readonly ingestPipeline = new KnowledgeIngestPipeline(postgresKnowledgeRepository);
-  private readonly searchEngine = new KnowledgeSearchEngine(postgresKnowledgeRepository);
+  private readonly repository = resolveKnowledgeRepository();
+  private readonly ingestPipeline = new KnowledgeIngestPipeline(this.repository);
+  private readonly searchEngine = new KnowledgeSearchEngine(this.repository);
 
   isConfigured() {
-    return postgresKnowledgeRepository.isConfigured();
+    return this.repository.isConfigured();
   }
 
   ensureConfigured() {
-    if (!this.isConfigured()) {
-      throw createRepositoryNotConfiguredError();
-    }
+    return;
   }
 
   async listDocuments() {
     this.ensureConfigured();
-    return postgresKnowledgeRepository.listDocuments();
+    return this.repository.listDocuments();
   }
 
   async ingest(input: IngestDocumentInput) {
@@ -30,12 +28,12 @@ export class KnowledgeEngine {
 
   async deleteDocument(documentId: string) {
     this.ensureConfigured();
-    return postgresKnowledgeRepository.deleteDocument(documentId);
+    return this.repository.deleteDocument(documentId);
   }
 
   async updateDocumentCategory(documentId: string, category: string) {
     this.ensureConfigured();
-    const updated = await postgresKnowledgeRepository.updateDocumentCategory(documentId, category);
+    const updated = await this.repository.updateDocumentCategory(documentId, category);
     if (!updated) {
       throw new Error("Document not found");
     }

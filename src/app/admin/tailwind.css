@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@theme {
+  --color-thor-bg: #0b1220;
+  --color-thor-surface: #121b2d;
+  --color-thor-surface-2: #18243d;
+  --color-thor-accent: #4f46e5;
+  --color-thor-accent-2: #06b6d4;
+  --color-thor-text: #e2e8f0;
+  --color-thor-muted: #94a3b8;
+}
+
+.admin-grid-bg {
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.progress-shine {
+  background-image: linear-gradient(90deg, #4f46e5, #06b6d4, #4f46e5);
+  background-size: 220% 100%;
+  animation: progress-shine 1.2s linear infinite;
+}
+
+@keyframes progress-shine {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -40% 0;
+  }
+}

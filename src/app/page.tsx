@@ -29,6 +29,7 @@ import { ToastViewport } from "@/components/ui/ToastViewport";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/hooks/useToast";
+import { fetchJson } from "@/lib/fetchJson";
 
 declare global {
   interface Window {
@@ -467,7 +468,12 @@ export default function HomePage() {
 
     await enqueueApiRequest(async () => {
       try {
-        const res = await fetch("/api/translate", {
+        const result = await fetchJson<{
+          response?: string;
+          cached?: boolean;
+          intent?: string;
+          provider?: string;
+        }>("/api/translate", {
           method: "POST",
           headers: getApiHeaders(),
           body: JSON.stringify({
@@ -485,10 +491,11 @@ export default function HomePage() {
           }),
         });
 
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data?.error || `Server error: ${res.status}`);
+        if (!result.ok) {
+          throw new Error(result.message || `Server error: ${result.status}`);
         }
+
+        const data = result.data;
 
         setLastIntent(data?.intent || "TRANSLATE");
         setLastProvider(data?.provider || "LOCAL");
@@ -528,7 +535,11 @@ export default function HomePage() {
 
     await enqueueApiRequest(async () => {
       try {
-        const res = await fetch("/api/translate", {
+        const result = await fetchJson<{
+          response?: string;
+          intent?: string;
+          provider?: string;
+        }>("/api/translate", {
           method: "POST",
           headers: getApiHeaders(),
           body: JSON.stringify({
@@ -541,10 +552,11 @@ export default function HomePage() {
           }),
         });
 
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data?.error || `Server error: ${res.status}`);
+        if (!result.ok) {
+          throw new Error(result.message || `Server error: ${result.status}`);
         }
+
+        const data = result.data;
 
         setLastIntent(data?.intent || "TRANSLATE");
         setLastProvider(data?.provider || "LOCAL");
@@ -587,7 +599,12 @@ export default function HomePage() {
 
     await enqueueApiRequest(async () => {
       try {
-        const res = await fetch("/api/translate", {
+        const result = await fetchJson<{
+          response?: string;
+          cached?: boolean;
+          intent?: string;
+          provider?: string;
+        }>("/api/translate", {
           method: "POST",
           headers: getApiHeaders(),
           body: JSON.stringify({
@@ -600,10 +617,11 @@ export default function HomePage() {
           }),
         });
 
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data?.error || `Server error: ${res.status}`);
+        if (!result.ok) {
+          throw new Error(result.message || `Server error: ${result.status}`);
         }
+
+        const data = result.data;
 
         setLastIntent(data?.intent || "DICTIONARY");
         setLastProvider(data?.provider || "LOCAL");
@@ -642,7 +660,12 @@ export default function HomePage() {
 
     await enqueueApiRequest(async () => {
       try {
-        const res = await fetch("/api/translate", {
+        const result = await fetchJson<{
+          response?: string;
+          intent?: string;
+          provider?: string;
+          command?: { name?: string };
+        }>("/api/translate", {
           method: "POST",
           headers: getApiHeaders(),
           body: JSON.stringify({
@@ -651,10 +674,11 @@ export default function HomePage() {
           }),
         });
 
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data?.error || `Server error: ${res.status}`);
+        if (!result.ok) {
+          throw new Error(result.message || `Server error: ${result.status}`);
         }
+
+        const data = result.data;
 
         const detectedIntent = data?.intent || "UNKNOWN";
         const detectedProvider = data?.provider || "LOCAL";

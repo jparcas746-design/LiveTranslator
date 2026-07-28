@@ -2,10 +2,21 @@ import { NextResponse } from "next/server";
 import { getKnowledgeEngine } from "@/thor/brain/knowledgeEngine";
 import { requireAdmin } from "@/thor/utils/adminAuth";
 import { toApiError } from "@/thor/utils/httpErrors";
+import type { SourceType } from "@/thor/knowledge/types";
+
+function resolveSourceType(fileName: string): SourceType | null {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".pdf")) return "pdf";
+  if (lower.endsWith(".txt")) return "text";
+  if (lower.endsWith(".doc") || lower.endsWith(".docx")) return "word";
+  return null;
+}
 
 export async function GET(request: Request) {
+  console.log("ADMIN_KNOWLEDGE_GET_START", { time: new Date().toISOString() });
   const denied = requireAdmin(request);
   if (denied) {
+    console.warn("ADMIN_KNOWLEDGE_GET_DENIED", { time: new Date().toISOString() });
     return denied;
   }
 
@@ -13,17 +24,28 @@ export async function GET(request: Request) {
     const engine = getKnowledgeEngine();
     const documents = await engine.listDocuments();
 
+    console.log("ADMIN_KNOWLEDGE_GET_OK", {
+      total: documents.length,
+      time: new Date().toISOString(),
+    });
+
     return NextResponse.json({
       documents,
     });
   } catch (error) {
+    console.error("ADMIN_KNOWLEDGE_GET_ERROR", {
+      error: toApiError(error),
+      time: new Date().toISOString(),
+    });
     return NextResponse.json({ error: toApiError(error) }, { status: 503 });
   }
 }
 
 export async function POST(request: Request) {
+  console.log("ADMIN_KNOWLEDGE_POST_START", { time: new Date().toISOString() });
   const denied = requireAdmin(request);
   if (denied) {
+    console.warn("ADMIN_KNOWLEDGE_POST_DENIED", { time: new Date().toISOString() });
     return denied;
   }
 
@@ -36,8 +58,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "file is required" }, { status: 400 });
     }
 
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
-      return NextResponse.json({ error: "Only PDF files are accepted" }, { status: 400 });
+    const sourceType = resolveSourceType(file.name);
+    if (!sourceType) {
+      return NextResponse.json(
+        { error: "Only PDF, TXT and Word (.doc/.docx) files are accepted" },
+        { status: 400 }
+      );
     }
 
     const bytes = await file.arrayBuffer();
@@ -46,7 +72,7 @@ export async function POST(request: Request) {
     const engine = getKnowledgeEngine();
     const result = await engine.ingest({
       fileName: file.name,
-      sourceType: "pdf",
+      sourceType,
       category,
       fileBuffer: buffer,
       metadata: {
@@ -55,8 +81,19 @@ export async function POST(request: Request) {
       },
     });
 
+    console.log("ADMIN_KNOWLEDGE_POST_OK", {
+      name: file.name,
+      sourceType,
+      chunkCount: result.chunkCount,
+      time: new Date().toISOString(),
+    });
+
     return NextResponse.json({ result }, { status: 201 });
   } catch (error) {
+    console.error("ADMIN_KNOWLEDGE_POST_ERROR", {
+      error: toApiError(error),
+      time: new Date().toISOString(),
+    });
     return NextResponse.json({ error: toApiError(error) }, { status: 503 });
   }
 }
