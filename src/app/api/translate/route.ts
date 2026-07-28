@@ -44,6 +44,10 @@ async function askGemini(systemPrompt: string, messages: any[], maxTokens: numbe
     const client = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY || "",
     });
+    console.log(
+      "GEMINI KEY:",
+      process.env.GEMINI_API_KEY ? "Existe" : "NO EXISTE"
+    );
 
     // Mapeo de roles para Gemini (user / model)
     const formattedContents = messages.map(m => ({
@@ -53,7 +57,7 @@ async function askGemini(systemPrompt: string, messages: any[], maxTokens: numbe
 
     // Llamada oficial de la API @google/genai
     const result = await client.models.generateContent({
-      model: "gemini-2.0-flash", // Compatible con el nuevo SDK
+      model: "gemini-3.5-flash", // Compatible con el nuevo SDK
       contents: formattedContents,
       config: {
         systemInstruction: systemPrompt,
