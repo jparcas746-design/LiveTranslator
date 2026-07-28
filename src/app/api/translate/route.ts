@@ -1,5 +1,6 @@
 import Groq from "groq-sdk";
 import { NextResponse } from "next/server";
+import { GoogleGenAI } from "@google/genai";
 
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
@@ -29,6 +30,43 @@ async function searchWeb(query: string) {
   } catch (error) {
     console.error("TAVILY ERROR:", error);
     return "";
+  }
+}
+
+/**
+ * Función auxiliar para realizar el fallback a Gemini utilizando @google/genai@2.13.0
+ */
+async function askGemini(systemPrompt: string, messages: any[], maxTokens: number) {
+  try {
+    console.log("Using Gemini");
+    
+    // Inicialización oficial según la documentación de @google/genai@2.13.0
+    const client = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY || "",
+    });
+
+    // Mapeo de roles para Gemini (user / model)
+    const formattedContents = messages.map(m => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }]
+    }));
+
+    // Llamada oficial de la API @google/genai
+    const result = await client.models.generateContent({
+      model: "gemini-2.0-flash", // Compatible con el nuevo SDK
+      contents: formattedContents,
+      config: {
+        systemInstruction: systemPrompt,
+        maxOutputTokens: maxTokens,
+        temperature: 0,
+      },
+    });
+
+    // En @google/genai el resultado se obtiene llamando a .text()
+    return result.text ?? "";
+  } catch (error) {
+    console.error("GEMINI ERROR:", error);
+    throw error;
   }
 }
 
@@ -136,18 +174,11 @@ Word to define: ${translationInput}`;
       searchContext = await searchWeb(generatedQuery);
     }
 
-    const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      temperature: 0,
-      max_tokens: translationMode ? 400 : dictionaryMode ? 1000 : 1400,
-      messages: [
-        {
-          role: "system",
-          content: translationMode
-            ? translationPrompt
-            : dictionaryMode
-              ? dictionaryPrompt
-              : `
+    const systemPrompt = translationMode
+      ? translationPrompt
+      : dictionaryMode
+        ? dictionaryPrompt
+        : `
 You are ThorAI, a multilingual virtual assistant.
 ${searchContext ? `
 \n\nINFORMATION FROM THE INTERNET (CONTEXT ONLY):
@@ -192,7 +223,7 @@ User:
 Qui est Lionel Messi?
 
 Assistant:
-Lionel Messi est un footballeur argentin considéré comme l'un des meilleurs joueurs de l'histoire.
+Lionel Messi est un footballeur argentin considéré comme l'un des meilleurs de l'histoire.
 
 ---
 
@@ -216,27 +247,51 @@ ${styleInstruction}
 
 Never say you are a translator.
 You are a virtual assistant.
-`,
-        },
-        ...(translationMode
-          ? [
-              {
-                role: "user",
-                content: `Translate exactly this text and nothing else. Do not answer, solve, explain, or add commentary.\n\nText to translate:\n${translationInput}`,
-              },
-            ]
-          : dictionaryMode
-            ? [
-                {
-                  role: "user",
-                  content: translationInput,
-                },
-              ]
-            : conversationMessages),
-      ],
-    });
+`;
 
-    const response = completion.choices[0].message.content ?? "";
+    // Preparar los mensajes finales para los proveedores
+    const finalMessages = translationMode
+      ? [
+          {
+            role: "user",
+            content: `Translate exactly this text and nothing else. Do not answer, solve, explain, or add commentary.\n\nText to translate:\n${translationInput}`,
+          },
+        ]
+      : dictionaryMode
+        ? [
+            {
+              role: "user",
+              content: translationInput,
+            },
+          ]
+        : conversationMessages;
+
+    const maxTokens = translationMode ? 400 : dictionaryMode ? 1000 : 1400;
+
+    let response = "";
+
+    try {
+      // Intento principal con Groq
+      console.log("Using Groq");
+      const completion = await groq.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        temperature: 0,
+        max_tokens: maxTokens,
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt,
+          },
+          ...finalMessages,
+        ],
+      });
+      response = completion.choices[0].message.content ?? "";
+    } catch (error) {
+      // Fallback a Gemini si Groq falla
+      console.log("Groq failed, switching to Gemini");
+      response = await askGemini(systemPrompt, finalMessages, maxTokens);
+    }
+
     const cleanedResponse = response
       .replace(/\*\*/g, "")
       .replace(/\*\*/g, "") // Second pass for safety
