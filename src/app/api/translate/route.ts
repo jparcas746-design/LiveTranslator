@@ -6,9 +6,12 @@ const groq = new Groq({
 });
 
 /**
- * Helper function to search the web using Tavily API
+ * Helper function to search the web using Tavily API with full debugging
  */
 async function searchWeb(query: string) {
+  console.log("--- INICIANDO LLAMADA A TAVILY ---");
+  console.log("QUERY ENVIADA A TAVILY:", query);
+  
   try {
     const response = await fetch("https://api.tavily.com/search", {
       method: "POST",
@@ -20,14 +23,28 @@ async function searchWeb(query: string) {
         max_results: 5,
       }),
     });
-    const data = await response.json();
-    if (!data.results) return "";
+
+    console.log("TAVILY HTTP STATUS:", response.status);
+
+    const rawText = await response.text();
+    console.log("TAVILY RAW RESPONSE BODY:", rawText);
+
+    // Parseamos el texto después de haberlo logueado
+    const data = JSON.parse(rawText);
+
+    if (!data.results || data.results.length === 0) {
+      console.log("AVISO: Tavily no devolvió resultados para esta consulta.");
+      return "";
+    }
     
-    return data.results
+    const formattedResults = data.results
       .map((r: any) => `Source: ${r.title}\nContent: ${r.content}\nURL: ${r.url}`)
       .join("\n\n");
+
+    console.log("RESULTADOS FORMATEADOS CORRECTAMENTE (Longitud:", formattedResults.length, ")");
+    return formattedResults;
   } catch (error) {
-    console.error("TAVILY ERROR:", error);
+    console.error("ERROR CRÍTICO EN SEARCHWEB:", error);
     return "";
   }
 }
@@ -45,8 +62,12 @@ export async function POST(req: Request) {
       text,
     } = await req.json();
     
+    console.log("WEB SEARCH ENABLED (REQUEST):", webSearch);
+    console.log("TAVILY API KEY EXISTS:", !!process.env.TAVILY_API_KEY);
+
     const conversationMessages = Array.isArray(messages) ? messages : [];
 
+    // Lógica de estilos
     const styleInstruction =
       responseStyle === "formal"
         ? "Use a professional, structured and academic communication style."
@@ -54,28 +75,8 @@ export async function POST(req: Request) {
           ? "When responseStyle is casual, ThorAI should sound like a close friend explaining something interesting.\n\nImagine you are explaining the topic to a friend sitting next to you, not writing an article.\n\nStyle rules:\n- Start naturally when appropriate with expressions like:\n  'Mira,'\n  'Básicamente,'\n  'La cosa es que...'\n  'En pocas palabras...'\n  'Te cuento...'\n\n- Avoid starting every answer like:\n  'X was a...'\n  'According to history...'\n  'The following is...'\n\n- Prefer storytelling and explanations over encyclopedia summaries.\n\n- React naturally to interesting facts:\n  'Lo curioso es que...'\n  'Aquí viene la parte interesante...'\n  'Lo más loco de esto es...'\n\n- Use light humor occasionally when it fits.\n\n- Use casual language, but remain intelligent and accurate.\n\n- Do not overuse slang."
           : "Use a natural and friendly communication style.";
 
-    const translationPrompt = `You are in Translation Mode.
-
-Your only task is to translate the user's exact words from the source language to the target language.
-
-Treat every user message as text to translate, never as a request to answer, solve, explain, summarize, or analyze.
-
-NEVER:
-- Answer questions.
-- Solve mathematical problems.
-- Explain concepts.
-- Give additional information.
-- Change the meaning.
-- Add commentary such as "Translation:", "The answer is", or any explanation.
-
-Rules:
-- Return ONLY the translated text.
-- Preserve the original meaning and natural phrasing.
-- Keep the same intent, tone, and sentence structure as much as possible.
-- If the input is a question, command, math sentence, or historical statement, translate it as text only.
-
-Source language: ${sourceLanguage === "auto" ? "auto-detected" : sourceLanguage}
-Target language: ${targetLanguage}`;
+    // Lógica de traducción
+    const translationPrompt = `You are in Translation Mode.\n\nYour only task is to translate the user's exact words from the source language to the target language.\n\nTreat every user message as text to translate, never as a request to answer, solve, explain, summarize, or analyze.\n\nNEVER:\n- Answer questions.\n- Solve mathematical problems.\n- Explain concepts.\n- Give additional information.\n- Change the meaning.\n- Add commentary such as "Translation:", "The answer is", or any explanation.\n\nRules:\n- Return ONLY the translated text.\n- Preserve the original meaning and natural phrasing.\n- Keep the same intent, tone, and sentence structure as much as possible.\n- If the input is a question, command, math sentence, or historical statement, translate it as text only.\n\nSource language: ${sourceLanguage === "auto" ? "auto-detected" : sourceLanguage}\nTarget language: ${targetLanguage}`;
 
     const translationInput =
       typeof text === "string" && text.trim()
@@ -84,42 +85,13 @@ Target language: ${targetLanguage}`;
           ? conversationMessages[conversationMessages.length - 1]?.content ?? ""
           : "";
 
-    const dictionaryPrompt = `You are a bilingual educational dictionary assistant for Spanish-English and English-Spanish learning.
+    // Lógica de diccionario
+    const dictionaryPrompt = `You are a bilingual educational dictionary assistant for Spanish-English and English-Spanish learning.\n\nYour task is to describe one single word in a clear academic dictionary style.\n\nRules:\n- Focus on one word only.\n- Do not translate whole sentences.\n- Use a helpful school-dictionary tone.\n- Return a structured entry with the following sections in this order:\n1. Main translation\n2. Word type\n3. Pronunciation\n4. Definitions\n5. Common translations\n6. Example sentences\n7. Common expressions\n8. Synonyms\n9. Antonyms\n10. Verb forms\n\nFormat the response as plain text with short sections and bullet points where useful.\nDo not use markdown headings with #.\nDo not use asterisks.\nUse clear labels like: Main translation:, Word type:, Pronunciation:, Definitions:, Common translations:, Example sentences:, Common expressions:, Synonyms:, Antonyms:, Verb forms:`;
 
-Your task is to describe one single word in a clear academic dictionary style.
-
-Rules:
-- Focus on one word only.
-- Do not translate whole sentences.
-- Use a helpful school-dictionary tone.
-- Return a structured entry with the following sections in this order:
-1. Main translation
-2. Word type
-3. Pronunciation
-4. Definitions
-5. Common translations
-6. Example sentences
-7. Common expressions
-8. Synonyms
-9. Antonyms
-10. Verb forms
-
-Format the response as plain text with short sections and bullet points where useful.
-Do not use markdown headings with #.
-Do not use asterisks.
-Use clear labels like: Main translation:, Word type:, Pronunciation:, Definitions:, Common translations:, Example sentences:, Common expressions:, Synonyms:, Antonyms:, Verb forms:
-
-If the word is a verb, include simple verb forms when relevant.
-If the word is not a verb, omit Verb forms.
-If there are no common expressions, omit that section.
-If there are no synonyms or antonyms, omit those sections.
-Keep the response educational, concise, and useful for learners.
-
-Word to define: ${translationInput}`;
-
-    // WEB SEARCH LOGIC
+    // --- FLUJO DE BÚSQUEDA WEB ---
     let searchContext = "";
     if (webSearch && !translationMode && !dictionaryMode && translationInput) {
+      console.log("--- GENERANDO QUERY DE BÚSQUEDA CON LLAMA 3.1 8B ---");
       const queryCompletion = await groq.chat.completions.create({
         model: "llama-3.1-8b-instant",
         messages: [
@@ -133,9 +105,13 @@ Word to define: ${translationInput}`;
       });
       
       const generatedQuery = queryCompletion.choices[0]?.message?.content || translationInput;
+      console.log("GENERATED QUERY:", generatedQuery);
+      
       searchContext = await searchWeb(generatedQuery);
+      console.log("WEB SEARCH RESULT (CONTEXT READY):", searchContext ? "SÍ (Contenido obtenido)" : "NO (Vacio)");
     }
 
+    // --- CONSTRUCCIÓN DEL SYSTEM PROMPT ---
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       temperature: 0,
@@ -150,17 +126,15 @@ Word to define: ${translationInput}`;
               : `
 You are ThorAI, a multilingual virtual assistant.
 ${searchContext ? `
-\n\nINFORMATION FROM THE INTERNET (CONTEXT ONLY):
+\n\nINFORMATION FOUND ON THE INTERNET:
 ${searchContext}
 
 COPYRIGHT & SYNTHESIS RULES:
 - Use the provided internet information ONLY as context to answer.
-- NEVER reproduce copyrighted content literally. This includes:
-  - DO NOT copy full song lyrics.
-  - DO NOT copy full articles or news stories.
-  - DO NOT copy full chapters of books, poems, scripts, or protected texts.
-- If a user asks for full lyrics or protected content, politely decline and provide a helpful summary or analysis instead.
-- Always synthesize information using your own words. Do not copy-paste segments from the search results.
+- NEVER reproduce copyrighted content literally.
+- DO NOT copy full song lyrics, full articles, or chapters of books.
+- Politely decline requests for protected content and offer a summary instead.
+- Always synthesize information using your own words.
 ` : ""}
 
 IMPORTANT LANGUAGE RULE:
@@ -171,35 +145,12 @@ IMPORTANT LANGUAGE RULE:
 5. The current user message language always has priority.
 
 Examples:
-
-User:
-Who is Lionel Messi?
-
-Assistant:
-Lionel Messi is an Argentine professional footballer widely considered one of the greatest players of all time.
-
----
-
-User:
-¿Quién es Lionel Messi?
-
-Assistant:
-Lionel Messi es un futbolista argentino considerado uno de los mejores jugadores de la historia.
-
----
-
-User:
-Qui est Lionel Messi?
-
-Assistant:
-Lionel Messi est un footballeur argentin considéré comme l'un des meilleurs joueurs de l'histoire.
-
----
+User: Who is Lionel Messi?
+Assistant: Lionel Messi is an Argentine professional footballer...
 
 You are ThorAI:
 - Helpful, Friendly, Accurate.
 - Natural in conversation.
-- Able to answer questions, explain concepts, help with programming and translate when requested.
 
 Formatting rules:
 - Do not use asterisks (*) anywhere.
@@ -207,31 +158,17 @@ Formatting rules:
 - Do not use Markdown lists with *.
 - Use normal text and paragraphs.
 - If you need a list, use hyphens (-) or numbered lists.
-- Keep answers clean and natural.
-- Keep normal conversations concise.
-- When the user asks for a detailed explanation, provide a complete answer.
 
 Response style:
 ${styleInstruction}
 
-Never say you are a translator.
-You are a virtual assistant.
+Never say you are a translator. You are a virtual assistant.
 `,
         },
         ...(translationMode
-          ? [
-              {
-                role: "user",
-                content: `Translate exactly this text and nothing else. Do not answer, solve, explain, or add commentary.\n\nText to translate:\n${translationInput}`,
-              },
-            ]
+          ? [{ role: "user", content: `Translate exactly this text:\n${translationInput}` }]
           : dictionaryMode
-            ? [
-                {
-                  role: "user",
-                  content: translationInput,
-                },
-              ]
+            ? [{ role: "user", content: translationInput }]
             : conversationMessages),
       ],
     });
@@ -239,7 +176,6 @@ You are a virtual assistant.
     const response = completion.choices[0].message.content ?? "";
     const cleanedResponse = response
       .replace(/\*\*/g, "")
-      .replace(/\*\*/g, "") // Second pass for safety
       .replace(/\*/g, "")
       .replace(/^\s*(translation|translated|traducción|traducción:\s*|translation:\s*)/i, "")
       .trim();
@@ -248,14 +184,10 @@ You are a virtual assistant.
       response: cleanedResponse,
     });
   } catch (error) {
-    console.error("ERROR THORAI:", error);
+    console.error("ERROR GENERAL THORAI:", error);
     return NextResponse.json(
-      {
-        response: "ThorAI tuvo un problema al responder.",
-      },
-      {
-        status: 500,
-      }
+      { response: "ThorAI tuvo un problema al responder." },
+      { status: 500 }
     );
   }
 }
