@@ -5,6 +5,33 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
+/**
+ * Helper function to search the web using Tavily API
+ */
+async function searchWeb(query: string) {
+  try {
+    const response = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: process.env.TAVILY_API_KEY,
+        query: query,
+        search_depth: "smart",
+        max_results: 5,
+      }),
+    });
+    const data = await response.json();
+    if (!data.results) return "";
+    
+    return data.results
+      .map((r: any) => `Source: ${r.title}\nContent: ${r.content}\nURL: ${r.url}`)
+      .join("\n\n");
+  } catch (error) {
+    console.error("TAVILY ERROR:", error);
+    return "";
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const {
@@ -12,10 +39,12 @@ export async function POST(req: Request) {
       responseStyle = "balanced",
       translationMode = false,
       dictionaryMode = false,
+      webSearch = false, // Added support for webSearch
       sourceLanguage = "auto",
       targetLanguage = "en",
       text,
     } = await req.json();
+    
     const conversationMessages = Array.isArray(messages) ? messages : [];
 
     const styleInstruction =
@@ -88,6 +117,28 @@ Keep the response educational, concise, and useful for learners.
 
 Word to define: ${translationInput}`;
 
+    // WEB SEARCH LOGIC
+    let searchContext = "";
+    if (webSearch && !translationMode && !dictionaryMode && translationInput) {
+      // 1. Generate optimized search query
+      const queryCompletion = await groq.chat.completions.create({
+        model: "llama-3.1-8b-instant",
+        messages: [
+          { 
+            role: "system", 
+            content: "You are a search query generator. Output only the most effective search query for the user's request. No quotes, no preamble." 
+          },
+          { role: "user", content: translationInput }
+        ],
+        temperature: 0,
+      });
+      
+      const generatedQuery = queryCompletion.choices[0]?.message?.content || translationInput;
+      
+      // 2. Perform Tavily Search
+      searchContext = await searchWeb(generatedQuery);
+    }
+
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       temperature: 0,
@@ -101,6 +152,7 @@ Word to define: ${translationInput}`;
               ? dictionaryPrompt
               : `
 You are ThorAI, a multilingual virtual assistant.
+${searchContext ? `\n\nINFORMATION FOUND ON THE INTERNET:\n${searchContext}\n\nUse the internet information provided above to give an accurate, updated, and helpful response. If the information is relevant, synthesize it into your answer naturally.\n` : ""}
 
 IMPORTANT LANGUAGE RULE:
 
@@ -132,7 +184,7 @@ User:
 Qui est Lionel Messi?
 
 Assistant:
-Lionel Messi est un footballeur argentin considéré comme l'un des meilleurs joueurs de l'histoire.
+Lionel Messi est un footballeur argentin considéré como l'un des meilleurs joueurs de l'histoire.
 
 ---
 
