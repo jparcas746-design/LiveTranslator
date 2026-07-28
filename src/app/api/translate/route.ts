@@ -39,7 +39,7 @@ export async function POST(req: Request) {
       responseStyle = "balanced",
       translationMode = false,
       dictionaryMode = false,
-      webSearch = false, // Added support for webSearch
+      webSearch = false,
       sourceLanguage = "auto",
       targetLanguage = "en",
       text,
@@ -120,7 +120,6 @@ Word to define: ${translationInput}`;
     // WEB SEARCH LOGIC
     let searchContext = "";
     if (webSearch && !translationMode && !dictionaryMode && translationInput) {
-      // 1. Generate optimized search query
       const queryCompletion = await groq.chat.completions.create({
         model: "llama-3.1-8b-instant",
         messages: [
@@ -134,8 +133,6 @@ Word to define: ${translationInput}`;
       });
       
       const generatedQuery = queryCompletion.choices[0]?.message?.content || translationInput;
-      
-      // 2. Perform Tavily Search
       searchContext = await searchWeb(generatedQuery);
     }
 
@@ -152,10 +149,21 @@ Word to define: ${translationInput}`;
               ? dictionaryPrompt
               : `
 You are ThorAI, a multilingual virtual assistant.
-${searchContext ? `\n\nINFORMATION FOUND ON THE INTERNET:\n${searchContext}\n\nUse the internet information provided above to give an accurate, updated, and helpful response. If the information is relevant, synthesize it into your answer naturally.\n` : ""}
+${searchContext ? `
+\n\nINFORMATION FROM THE INTERNET (CONTEXT ONLY):
+${searchContext}
+
+COPYRIGHT & SYNTHESIS RULES:
+- Use the provided internet information ONLY as context to answer.
+- NEVER reproduce copyrighted content literally. This includes:
+  - DO NOT copy full song lyrics.
+  - DO NOT copy full articles or news stories.
+  - DO NOT copy full chapters of books, poems, scripts, or protected texts.
+- If a user asks for full lyrics or protected content, politely decline and provide a helpful summary or analysis instead.
+- Always synthesize information using your own words. Do not copy-paste segments from the search results.
+` : ""}
 
 IMPORTANT LANGUAGE RULE:
-
 1. First detect the language of the user's CURRENT message.
 2. Answer ONLY in that same language.
 3. Do not use Spanish by default.
@@ -184,14 +192,12 @@ User:
 Qui est Lionel Messi?
 
 Assistant:
-Lionel Messi est un footballeur argentin considéré como l'un des meilleurs joueurs de l'histoire.
+Lionel Messi est un footballeur argentin considéré comme l'un des meilleurs joueurs de l'histoire.
 
 ---
 
 You are ThorAI:
-- Helpful.
-- Friendly.
-- Accurate.
+- Helpful, Friendly, Accurate.
 - Natural in conversation.
 - Able to answer questions, explain concepts, help with programming and translate when requested.
 
@@ -203,7 +209,7 @@ Formatting rules:
 - If you need a list, use hyphens (-) or numbered lists.
 - Keep answers clean and natural.
 - Keep normal conversations concise.
-- When the user asks for a detailed explanation, provide a complete answer. Responses can be long (up to around 1000 words) when necessary. Do not artificially shorten useful information.
+- When the user asks for a detailed explanation, provide a complete answer.
 
 Response style:
 ${styleInstruction}
@@ -233,6 +239,7 @@ You are a virtual assistant.
     const response = completion.choices[0].message.content ?? "";
     const cleanedResponse = response
       .replace(/\*\*/g, "")
+      .replace(/\*\*/g, "") // Second pass for safety
       .replace(/\*/g, "")
       .replace(/^\s*(translation|translated|traducción|traducción:\s*|translation:\s*)/i, "")
       .trim();
@@ -242,7 +249,6 @@ You are a virtual assistant.
     });
   } catch (error) {
     console.error("ERROR THORAI:", error);
-
     return NextResponse.json(
       {
         response: "ThorAI tuvo un problema al responder.",
