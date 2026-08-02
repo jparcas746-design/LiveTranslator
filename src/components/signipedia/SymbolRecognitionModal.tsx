@@ -3,8 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, ImageUp, Loader2, Sparkles, X } from "lucide-react";
-import { CLIP_VISION_MODEL_ID } from "@/thor/signipedia/recognition/clipConfig";
-import { normalizeL2, VISION_EMBEDDING_DIMENSIONS } from "@/thor/signipedia/recognition/vectorMath";
+import { VISION_EMBEDDING_DIMENSIONS } from "@/thor/signipedia/recognition/vectorMath";
+import {
+  generateClipImageEmbedding,
+  isClipRuntimeLoaded,
+  loadClipVisionRuntime,
+  optimizeImageForVision,
+} from "@/lib/clipVisionClient";
 
 type RecognitionSource = "camera" | "upload";
 
@@ -49,66 +54,10 @@ type SymbolRecognitionModalProps = {
   onClose: () => void;
 };
 
-type ClipRuntime = {
-  modelId: string;
-  processor: (input: unknown) => Promise<Record<string, unknown>>;
-  model: (inputs: Record<string, unknown>) => Promise<Record<string, unknown>>;
-  RawImage: {
-    fromBlob: (blob: Blob) => Promise<unknown>;
-  };
-};
+type ProcessingStage = "idle" | "preparing" | "analyzing" | "searching";
 
 function confidenceLabel(value: number) {
   return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
-}
-
-async function canvasFromImageBitmap(bitmap: ImageBitmap, mimeType: string) {
-  const maxDimension = 1600;
-  const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const context = canvas.getContext("2d");
-  if (!context) {
-    throw new Error("Unable to initialize canvas context");
-  }
-
-  context.drawImage(bitmap, 0, 0, width, height);
-
-  const outputType = mimeType === "image/png" ? "image/png" : "image/jpeg";
-  const quality = outputType === "image/jpeg" ? 0.84 : undefined;
-
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((result) => {
-      if (!result) {
-        reject(new Error("Unable to create compressed image"));
-        return;
-      }
-
-      resolve(result);
-    }, outputType, quality);
-  });
-
-  return { blob, outputType };
-}
-
-async function preprocessImage(file: File) {
-  try {
-    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" as ImageOrientation });
-    const { blob, outputType } = await canvasFromImageBitmap(bitmap, file.type);
-    bitmap.close();
-
-    const extension = outputType === "image/png" ? "png" : "jpg";
-    const fileName = file.name.replace(/\.[a-z0-9]+$/i, "") || "symbol";
-
-    return new File([blob], `${fileName}-optimized.${extension}`, { type: outputType });
-  } catch {
-    return file;
-  }
 }
 
 export function SymbolRecognitionModal({ open, onClose }: SymbolRecognitionModalProps) {
@@ -116,23 +65,34 @@ export function SymbolRecognitionModal({ open, onClose }: SymbolRecognitionModal
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const autoRedirectTimerRef = useRef<number | null>(null);
-  const clipRuntimeRef = useRef<ClipRuntime | null>(null);
+  const slowProcessTimerRef = useRef<number | null>(null);
 
   const [source, setSource] = useState<RecognitionSource | null>(null);
   const [preparedFile, setPreparedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [isPreparing, setIsPreparing] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [stage, setStage] = useState<ProcessingStage>("idle");
+  const [isLongRunning, setIsLongRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RecognitionResult | null>(null);
   const [redirectTarget, setRedirectTarget] = useState<string | null>(null);
 
+  const isPreparing = stage === "preparing";
+  const isAnalyzing = stage === "analyzing" || stage === "searching";
+
+  const stageLabel = useMemo(() => {
+    if (stage === "preparing") return "Preparando imagen...";
+    if (stage === "analyzing") return "Analizando con IA...";
+    if (stage === "searching") return "Buscando coincidencias...";
+    return "";
+  }, [stage]);
+
   const heading = useMemo(() => {
-    if (isPreparing) return "Preparando imagen";
-    if (isAnalyzing) return "Analizando símbolo...";
+    if (stage === "preparing") return "Preparando imagen";
+    if (stage === "analyzing") return "Analizando con IA";
+    if (stage === "searching") return "Buscando coincidencias";
     if (result) return "Resultado del reconocimiento";
     return "Reconocer símbolo con IA";
-  }, [isAnalyzing, isPreparing, result]);
+  }, [result, stage]);
 
   const lowConfidenceMessage = useMemo(() => {
     if (!result?.lowConfidence) {
@@ -168,6 +128,9 @@ export function SymbolRecognitionModal({ open, onClose }: SymbolRecognitionModal
       if (autoRedirectTimerRef.current) {
         window.clearTimeout(autoRedirectTimerRef.current);
       }
+      if (slowProcessTimerRef.current) {
+        window.clearTimeout(slowProcessTimerRef.current);
+      }
     };
   }, []);
 
@@ -187,14 +150,18 @@ export function SymbolRecognitionModal({ open, onClose }: SymbolRecognitionModal
         URL.revokeObjectURL(previewUrl);
       }
       setPreviewUrl(null);
-      setIsPreparing(false);
-      setIsAnalyzing(false);
+      setStage("idle");
+      setIsLongRunning(false);
       setError(null);
       setResult(null);
       setRedirectTarget(null);
       if (autoRedirectTimerRef.current) {
         window.clearTimeout(autoRedirectTimerRef.current);
         autoRedirectTimerRef.current = null;
+      }
+      if (slowProcessTimerRef.current) {
+        window.clearTimeout(slowProcessTimerRef.current);
+        slowProcessTimerRef.current = null;
       }
     }
   }, [open, previewUrl]);
@@ -216,10 +183,14 @@ export function SymbolRecognitionModal({ open, onClose }: SymbolRecognitionModal
     setError(null);
     setResult(null);
     setRedirectTarget(null);
-    setIsPreparing(true);
+    setStage("preparing");
 
     try {
-      const optimized = await preprocessImage(file);
+      const optimized = await optimizeImageForVision(file, {
+        maxDimension: 768,
+        quality: 0.82,
+        maxBytes: 1_200_000,
+      });
       setPreparedFile(optimized);
       if (previewUrl) {
         URL.revokeObjectURL(previewUrl);
@@ -228,7 +199,7 @@ export function SymbolRecognitionModal({ open, onClose }: SymbolRecognitionModal
     } catch (preprocessError) {
       setError(preprocessError instanceof Error ? preprocessError.message : "No se pudo procesar la imagen seleccionada.");
     } finally {
-      setIsPreparing(false);
+      setStage("idle");
     }
   }
 
@@ -239,54 +210,36 @@ export function SymbolRecognitionModal({ open, onClose }: SymbolRecognitionModal
 
     setError(null);
     setResult(null);
-    setIsAnalyzing(true);
+    setStage("analyzing");
+    setIsLongRunning(false);
+
+    if (slowProcessTimerRef.current) {
+      window.clearTimeout(slowProcessTimerRef.current);
+    }
+
+    slowProcessTimerRef.current = window.setTimeout(() => {
+      setIsLongRunning(true);
+    }, 3600);
 
     const endpoint = source === "camera" ? "/api/recognition/camera" : "/api/recognition/image";
     const formData = new FormData();
     formData.set("image", preparedFile);
 
-    async function loadClipRuntime() {
-      if (clipRuntimeRef.current) {
-        return clipRuntimeRef.current;
-      }
-
-      const transformers = await import("@huggingface/transformers");
-      const { env, AutoProcessor, CLIPVisionModelWithProjection, RawImage } = transformers;
-
-      env.allowLocalModels = false;
-      env.useBrowserCache = true;
-
-      const processor = await AutoProcessor.from_pretrained(CLIP_VISION_MODEL_ID);
-      const model = await CLIPVisionModelWithProjection.from_pretrained(CLIP_VISION_MODEL_ID);
-
-      clipRuntimeRef.current = {
-        modelId: CLIP_VISION_MODEL_ID,
-        processor: processor as ClipRuntime["processor"],
-        model: model as ClipRuntime["model"],
-        RawImage: RawImage as ClipRuntime["RawImage"],
-      };
-
-      return clipRuntimeRef.current;
-    }
-
     try {
       try {
-        const runtime = await loadClipRuntime();
-        const rawImage = await runtime.RawImage.fromBlob(preparedFile);
-        const processed = await runtime.processor(rawImage);
-        const output = await runtime.model(processed);
-        const tensor = output.image_embeds as { data?: Float32Array | number[] } | undefined;
-        const values = tensor?.data ? Array.from(tensor.data) : [];
+        if (!isClipRuntimeLoaded()) {
+          await loadClipVisionRuntime();
+        }
 
-        if (values.length === VISION_EMBEDDING_DIMENSIONS) {
-          const normalized = normalizeL2(values);
-          if (normalized) {
-            formData.set("imageEmbedding", JSON.stringify(normalized));
-          }
+        const report = await generateClipImageEmbedding(preparedFile);
+        if (report.length === VISION_EMBEDDING_DIMENSIONS) {
+          formData.set("imageEmbedding", JSON.stringify(report.vector));
         }
       } catch {
         // If local CLIP embedding fails, backend can still use provider-based recognition.
       }
+
+      setStage("searching");
 
       const response = await fetch(endpoint, {
         method: "POST",
@@ -312,7 +265,12 @@ export function SymbolRecognitionModal({ open, onClose }: SymbolRecognitionModal
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "No se pudo analizar la imagen.");
     } finally {
-      setIsAnalyzing(false);
+      if (slowProcessTimerRef.current) {
+        window.clearTimeout(slowProcessTimerRef.current);
+        slowProcessTimerRef.current = null;
+      }
+      setIsLongRunning(false);
+      setStage("idle");
     }
   }
 
@@ -377,10 +335,11 @@ export function SymbolRecognitionModal({ open, onClose }: SymbolRecognitionModal
           </div>
         ) : null}
 
-        {isPreparing || isAnalyzing ? (
+        {stage !== "idle" ? (
           <div className="signipedia-recognition-progress" role="status" aria-live="polite">
             <Loader2 size={16} className="spin" />
-            <span>{isPreparing ? "Optimizando imagen para reconocimiento..." : "Analizando símbolo..."}</span>
+            <span>{stageLabel}</span>
+            {isLongRunning ? <small>El análisis continúa. Puede tardar unos segundos más.</small> : null}
             <div className="signipedia-recognition-bar" />
           </div>
         ) : null}

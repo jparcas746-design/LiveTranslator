@@ -17,6 +17,12 @@ export type ClipEmbeddingReport = {
   vector: number[];
 };
 
+type OptimizeImageOptions = {
+  maxDimension?: number;
+  quality?: number;
+  maxBytes?: number;
+};
+
 let runtime: ClipRuntime | null = null;
 
 export async function loadClipVisionRuntime() {
@@ -73,4 +79,73 @@ export async function generateClipImageEmbedding(file: Blob): Promise<ClipEmbedd
 
 export function isClipRuntimeLoaded() {
   return Boolean(runtime);
+}
+
+async function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number) {
+  return new Promise<Blob | null>((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), type, quality);
+  });
+}
+
+export async function optimizeImageForVision(file: File, options?: OptimizeImageOptions) {
+  const maxDimension = options?.maxDimension ?? 768;
+  const initialQuality = options?.quality ?? 0.82;
+  const targetMaxBytes = options?.maxBytes ?? 1_200_000;
+
+  if (typeof window === "undefined" || typeof createImageBitmap === "undefined") {
+    return file;
+  }
+
+  let bitmap: ImageBitmap | null = null;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" as ImageOrientation });
+    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return file;
+    }
+
+    context.drawImage(bitmap, 0, 0, width, height);
+
+    const qualitySteps = [
+      initialQuality,
+      Math.max(0.7, initialQuality - 0.08),
+      Math.max(0.62, initialQuality - 0.16),
+      0.55,
+    ];
+
+    for (const quality of qualitySteps) {
+      const webpBlob = await canvasToBlob(canvas, "image/webp", quality);
+      if (webpBlob && webpBlob.size <= targetMaxBytes) {
+        const fileName = file.name.replace(/\.[a-z0-9]+$/i, "") || "symbol";
+        return new File([webpBlob], `${fileName}-optimized.webp`, { type: "image/webp" });
+      }
+
+      const jpegBlob = await canvasToBlob(canvas, "image/jpeg", quality);
+      if (jpegBlob && jpegBlob.size <= targetMaxBytes) {
+        const fileName = file.name.replace(/\.[a-z0-9]+$/i, "") || "symbol";
+        return new File([jpegBlob], `${fileName}-optimized.jpg`, { type: "image/jpeg" });
+      }
+    }
+
+    const fallbackBlob = (await canvasToBlob(canvas, "image/jpeg", 0.5)) || (await canvasToBlob(canvas, "image/webp", 0.5));
+    if (!fallbackBlob) {
+      return file;
+    }
+
+    const fallbackName = file.name.replace(/\.[a-z0-9]+$/i, "") || "symbol";
+    const extension = fallbackBlob.type === "image/webp" ? "webp" : "jpg";
+    return new File([fallbackBlob], `${fallbackName}-optimized.${extension}`, { type: fallbackBlob.type || "image/jpeg" });
+  } catch {
+    return file;
+  } finally {
+    bitmap?.close();
+  }
 }
