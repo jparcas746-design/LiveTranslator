@@ -231,6 +231,7 @@ export default function AdminPage() {
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [symbols, setSymbols] = useState<AdminSymbolHit[]>([]);
   const [query, setQuery] = useState("");
+  const [symbolEditorMode, setSymbolEditorMode] = useState<"create" | "edit">("create");
   const [selectedSymbolSlug, setSelectedSymbolSlug] = useState<string | null>(null);
   const [symbolForm, setSymbolForm] = useState<SymbolFormState>(EMPTY_SYMBOL_FORM);
   const [categoryForm, setCategoryForm] = useState<CategoryFormState>(EMPTY_CATEGORY_FORM);
@@ -251,10 +252,13 @@ export default function AdminPage() {
   const [visionSaving, setVisionSaving] = useState(false);
   const [visionSaveMessage, setVisionSaveMessage] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const selectedSymbol = useMemo(
-    () => symbols.find((item) => item.symbol.slug === selectedSymbolSlug) || null,
-    [symbols, selectedSymbolSlug]
-  );
+  const selectedSymbol = useMemo(() => {
+    if (symbolEditorMode !== "edit" || !selectedSymbolSlug) {
+      return null;
+    }
+
+    return symbols.find((item) => item.symbol.slug === selectedSymbolSlug) || null;
+  }, [symbolEditorMode, symbols, selectedSymbolSlug]);
   const visionTargetSymbol = useMemo(() => {
     if (selectedSymbol) {
       return selectedSymbol;
@@ -339,12 +343,9 @@ export default function AdminPage() {
     setCategories(result.data.items.categories || []);
     const nextSymbols = result.data.items.symbols || [];
     setSymbols(nextSymbols);
-    if (!selectedSymbolSlug && nextSymbols.length > 0) {
-      setSelectedSymbolSlug(nextSymbols[0].symbol.slug);
-    }
     setStatus(`Catálogo cargado: ${result.data.summary.symbolCount ?? result.data.summary.symbols ?? 0} símbolos`);
     setLoading(false);
-  }, [router, selectedSymbolSlug]);
+  }, [router]);
 
   useEffect(() => {
     void (async () => {
@@ -361,7 +362,12 @@ export default function AdminPage() {
   }, [authState, loadData]);
 
   useEffect(() => {
+    if (symbolEditorMode !== "edit") {
+      return;
+    }
+
     if (selectedSymbol) {
+      const symbolImageUrl = selectedSymbol.symbol.imageUrl?.trim() || "";
       setSymbolForm({
         slug: selectedSymbol.symbol.slug,
         name: selectedSymbol.symbol.name,
@@ -383,14 +389,17 @@ export default function AdminPage() {
         relatedText: "",
         periodsJson: "[]",
         sourcesJson: "[]",
-        mediaLines: "",
+        mediaLines: symbolImageUrl,
         translationsJson: "[]",
       });
       return;
     }
 
+    // If the selected symbol no longer exists after reload/delete, return to create mode.
+    setSymbolEditorMode("create");
+    setSelectedSymbolSlug(null);
     setSymbolForm(EMPTY_SYMBOL_FORM);
-  }, [selectedSymbol]);
+  }, [selectedSymbol, symbolEditorMode]);
 
   useEffect(() => {
     setVisionEmbeddingReport(null);
@@ -410,12 +419,6 @@ export default function AdminPage() {
       }
     };
   }, [visionPreviewUrl]);
-
-  useEffect(() => {
-    if (!symbolForm.categoryId && categoryOptions.length > 0) {
-      setSymbolForm((current) => ({ ...current, categoryId: categoryOptions[0].slug }));
-    }
-  }, [categoryOptions, symbolForm.categoryId]);
 
   const authenticate = useCallback(async () => {
     setAuthError(null);
@@ -457,6 +460,7 @@ export default function AdminPage() {
   }, [router]);
 
   const saveSymbol = useCallback(async () => {
+    const isEditing = symbolEditorMode === "edit" && !!selectedSymbol;
     const payload = {
       ...symbolForm,
       variants: splitLines(symbolForm.variantsText),
@@ -471,10 +475,10 @@ export default function AdminPage() {
       translations: safeJsonArray(symbolForm.translationsJson),
     };
 
-    const endpoint = selectedSymbol ? `/api/symbols/${selectedSymbol.symbol.slug}` : "/api/symbols";
-    const method = selectedSymbol ? "PATCH" : "POST";
+    const endpoint = isEditing ? `/api/symbols/${selectedSymbol.symbol.slug}` : "/api/symbols";
+    const method = isEditing ? "PATCH" : "POST";
 
-    setStatus(selectedSymbol ? "Guardando símbolo..." : "Creando símbolo...");
+    setStatus(isEditing ? "Guardando símbolo..." : "Creando símbolo...");
     const result = await fetchJson(endpoint, {
       method,
       credentials: "include",
@@ -487,10 +491,17 @@ export default function AdminPage() {
       return;
     }
 
-    setSelectedSymbolSlug(payload.slug);
+    if (isEditing) {
+      setSelectedSymbolSlug(payload.slug);
+    } else {
+      setSymbolForm(EMPTY_SYMBOL_FORM);
+      setSelectedSymbolSlug(null);
+      setSymbolEditorMode("create");
+    }
+
     await loadData();
-    setStatus(selectedSymbol ? "Símbolo actualizado" : "Símbolo creado");
-  }, [loadData, selectedSymbol, symbolForm]);
+    setStatus(isEditing ? "Símbolo actualizado" : "Símbolo creado");
+  }, [loadData, selectedSymbol, symbolEditorMode, symbolForm]);
 
   const deleteSymbol = useCallback(async () => {
     if (!selectedSymbol) {
@@ -508,7 +519,9 @@ export default function AdminPage() {
       return;
     }
 
+    setSymbolEditorMode("create");
     setSelectedSymbolSlug(null);
+    setSymbolForm(EMPTY_SYMBOL_FORM);
     await loadData();
     setStatus("Símbolo eliminado");
   }, [loadData, selectedSymbol]);
@@ -582,11 +595,24 @@ export default function AdminPage() {
       return;
     }
 
+    if (!selectedSymbol?.symbol.id) {
+      setStatus("Selecciona un símbolo antes de subir la imagen para guardarla en base de datos.");
+      setImageUploadMessage(null);
+      return;
+    }
+
     const formData = new FormData();
     formData.set("file", file);
+    formData.set("symbolId", selectedSymbol.symbol.id);
 
     setStatus("Subiendo imagen...");
-    const result = await fetchJson<{ url: string; fileName: string }>("/api/admin/media", {
+    const result = await fetchJson<{
+      url: string;
+      fileName: string;
+      requestId?: string;
+      persistedUrl?: string | null;
+      readbackUrl?: string | null;
+    }>("/api/admin/media", {
       method: "POST",
       credentials: "include",
       body: formData,
@@ -597,24 +623,29 @@ export default function AdminPage() {
       return;
     }
 
+    const effectiveUrl = result.data.readbackUrl || result.data.persistedUrl || result.data.url;
+
     setSymbolForm((current) => ({
       ...current,
-      mediaLines: [current.mediaLines.trim(), result.data.url].filter(Boolean).join("\n"),
+      mediaLines: [effectiveUrl, ...splitLines(current.mediaLines)].join("\n"),
     }));
     setImageUploadMessage(`Imagen subida: ${result.data.url}`);
-    setStatus("Imagen lista para asociar al símbolo");
-  }, []);
+    await loadData();
+    setStatus(`Imagen subida y guardada en BD${result.data.requestId ? ` [requestId: ${result.data.requestId}]` : ""}`);
+  }, [loadData, selectedSymbol]);
 
   const newSymbol = useCallback(() => {
+    setSymbolEditorMode("create");
     setSelectedSymbolSlug(null);
-    setSymbolForm((current) => ({ ...EMPTY_SYMBOL_FORM, categoryId: current.categoryId || categoryOptions[0]?.slug || "" }));
-  }, [categoryOptions]);
+    setSymbolForm(EMPTY_SYMBOL_FORM);
+  }, []);
 
   const newCategory = useCallback(() => {
     setCategoryForm(EMPTY_CATEGORY_FORM);
   }, []);
 
-  const loadSymbolFromList = useCallback((symbol: AdminSymbolHit) => {
+  const editSymbolFromList = useCallback((symbol: AdminSymbolHit) => {
+    setSymbolEditorMode("edit");
     setSelectedSymbolSlug(symbol.symbol.slug);
   }, []);
 
@@ -1051,6 +1082,7 @@ export default function AdminPage() {
               <div>
                 <div className="text-sm text-thor-muted">Símbolos</div>
                 <h2 className="text-lg font-semibold">Crear y editar</h2>
+                <p className="text-xs text-thor-muted">Modo actual: {symbolEditorMode === "edit" ? "edición" : "nuevo"}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -1099,6 +1131,7 @@ export default function AdminPage() {
                   <label className="admin-field">
                     <span className="admin-field-label">Categoría</span>
                     <select className="admin-select" value={symbolForm.categoryId} onChange={(event) => setSymbolForm((current) => ({ ...current, categoryId: event.target.value }))}>
+                      <option value="">Selecciona una categoría...</option>
                       {categoryOptions.map((category) => (
                         <option key={category.id} value={category.slug}>{category.name}</option>
                       ))}
@@ -1513,10 +1546,8 @@ export default function AdminPage() {
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {filteredSymbols.map((entry) => (
-              <button
+              <article
                 key={entry.symbol.id}
-                type="button"
-                onClick={() => loadSymbolFromList(entry)}
                 className={`admin-symbol-card rounded-2xl border p-4 text-left transition ${selectedSymbolSlug === entry.symbol.slug ? "admin-symbol-card-selected" : ""}`}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -1528,7 +1559,12 @@ export default function AdminPage() {
                   <span className="admin-symbol-status rounded-full border px-2 py-1 text-[11px] uppercase tracking-wider">{entry.symbol.status}</span>
                 </div>
                 <p className="admin-symbol-meaning mt-3 line-clamp-3 text-sm">{entry.symbol.meaning}</p>
-              </button>
+                <div className="mt-3">
+                  <Button type="button" variant="secondary" onClick={() => editSymbolFromList(entry)} leftIcon={<PenSquare size={14} />}>
+                    Editar
+                  </Button>
+                </div>
+              </article>
             ))}
           </div>
         </section>

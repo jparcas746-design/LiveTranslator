@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSignipediaEngine } from "@/thor/signipedia/engine";
 import { jsonError, parseMediaInput, parsePeriodsInput, parseRelatedInput, parseSourceInput, parseStringArray, parseSymbolInput, parseTranslationsInput, readJsonBody } from "@/app/api/_signipedia";
+import { thorLogger } from "@/thor/utils/logger";
 
 export const runtime = "nodejs";
 
@@ -13,7 +14,17 @@ export async function GET(_request: Request, { params }: { params: Promise<{ slu
     return jsonError("Symbol not found", 404);
   }
 
-  return NextResponse.json({ item: symbol });
+  thorLogger.info("api.symbols.detail", "Symbol detail image URL readback", {
+    slug,
+    symbolId: symbol.symbol.id,
+    imageUrl: symbol.symbol.imageUrl,
+    firstMediaImageUrl: symbol.media.find((item) => item.kind === "image")?.url || null,
+  });
+
+  return NextResponse.json(
+    { item: symbol },
+    { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } }
+  );
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -56,7 +67,29 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       await engine.setSources(updated.id, parseSourceInput(body.sources));
     }
     if (Array.isArray(body.media)) {
-      await engine.setMedia(updated.id, parseMediaInput(body.media));
+      const parsedMedia = parseMediaInput(body.media);
+      const requestedMediaUrl = parsedMedia.find((item) => item.kind === "image")?.url || null;
+      thorLogger.info("api.symbols.patch", "Media update requested", {
+        slug,
+        symbolId: updated.id,
+        requestedMediaUrl,
+      });
+
+      const savedMedia = await engine.setMedia(updated.id, parsedMedia);
+      const savedMediaUrl = savedMedia.find((item) => item.kind === "image")?.url || null;
+
+      const readback = await engine.getSymbolDetailById(updated.id);
+      const readbackUrl =
+        readback?.symbol.imageUrl ||
+        readback?.media.find((item) => item.kind === "image")?.url ||
+        null;
+
+      thorLogger.info("api.symbols.patch", "Media update persisted", {
+        slug,
+        symbolId: updated.id,
+        savedMediaUrl,
+        readbackUrl,
+      });
     }
     if (Array.isArray(body.translations)) {
       await engine.setTranslations(updated.id, parseTranslationsInput(body.translations));

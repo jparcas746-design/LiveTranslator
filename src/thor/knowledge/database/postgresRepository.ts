@@ -1,7 +1,7 @@
 // PostgreSQL + pgvector repository implementation for production knowledge storage.
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { Pool, type PoolClient } from "pg";
+import { type PoolClient } from "pg";
 import type {
   IndexStatus,
   KnowledgeDocument,
@@ -16,13 +16,57 @@ import {
   type ListKnowledgeDocumentsQuery,
 } from "@/thor/knowledge/database/repository";
 import { thorLogger } from "@/thor/utils/logger";
-import { resolveRequiredPostgresConnectionString } from "@/thor/utils/postgresConnection";
+import { createPostgresPool, resolveRequiredPostgresConnectionString, type PostgresPoolLike } from "@/thor/utils/postgresConnection";
 
-let pool: Pool | null = null;
+let pool: PostgresPoolLike | null = null;
 let schemaReadyPromise: Promise<void> | null = null;
+
+const SCHEMA_BOOTSTRAP_LOCK_ID = 704286215;
+const BOOTSTRAP_MAX_RETRIES = 3;
 
 function resolveConnectionString() {
   return resolveRequiredPostgresConnectionString({ label: "Knowledge Engine" });
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientConnectionError(error: unknown) {
+  const code = typeof error === "object" && error && "code" in error
+    ? String((error as { code?: unknown }).code || "")
+    : "";
+
+  return ["ETIMEDOUT", "ECONNREFUSED", "ECONNRESET", "ENETUNREACH", "EHOSTUNREACH"].includes(code);
+}
+
+async function withRetry<T>(label: string, task: () => Promise<T>) {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= BOOTSTRAP_MAX_RETRIES; attempt += 1) {
+    try {
+      return await task();
+    } catch (error) {
+      lastError = error;
+      const retryable = isTransientConnectionError(error);
+
+      thorLogger.warn("knowledge.db.bootstrap", "Attempt failed", {
+        label,
+        attempt,
+        retryable,
+        code: typeof error === "object" && error && "code" in error ? (error as { code?: unknown }).code : undefined,
+        message: error instanceof Error ? error.message : String(error),
+      });
+
+      if (!retryable || attempt >= BOOTSTRAP_MAX_RETRIES) {
+        throw error;
+      }
+
+      await delay(300 * attempt);
+    }
+  }
+
+  throw lastError;
 }
 
 function getPool() {
@@ -32,7 +76,18 @@ function getPool() {
 
   const connectionString = resolveConnectionString();
 
-  pool = new Pool({ connectionString });
+  pool = createPostgresPool({
+    connectionString,
+    max: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 10_000,
+    allowExitOnIdle: false,
+  });
+
+  thorLogger.info("knowledge.db.pool", "Initialized Postgres pool", {
+    host: new URL(connectionString).hostname,
+  });
+
   return pool;
 }
 
@@ -58,12 +113,24 @@ async function loadSchemaSql() {
   return fs.readFile(schemaPath, "utf8");
 }
 
-async function ensureSchemaReady(connection: Pool) {
+async function ensureSchemaReady(connection: PostgresPoolLike) {
   if (!schemaReadyPromise) {
-    schemaReadyPromise = (async () => {
+    schemaReadyPromise = withRetry("schema-ready", async () => {
       const schemaSql = await loadSchemaSql();
-      await connection.query(schemaSql);
-    })().catch((error) => {
+      const client = await connection.connect();
+
+      try {
+        await client.query("SELECT pg_advisory_lock($1)", [SCHEMA_BOOTSTRAP_LOCK_ID]);
+        await client.query(schemaSql);
+      } finally {
+        try {
+          await client.query("SELECT pg_advisory_unlock($1)", [SCHEMA_BOOTSTRAP_LOCK_ID]);
+        } catch {
+          // best effort unlock
+        }
+        client.release();
+      }
+    }).catch((error) => {
       schemaReadyPromise = null;
       throw error;
     });

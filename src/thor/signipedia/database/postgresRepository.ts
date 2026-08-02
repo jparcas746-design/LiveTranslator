@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { Pool, type PoolClient } from "pg";
+import { type PoolClient } from "pg";
 import {
   getRelatedSymbols,
   signipediaCategories,
@@ -18,14 +18,59 @@ import type {
   SymbolUpsertInput,
 } from "@/thor/signipedia/types";
 import type { SignipediaRepository } from "@/thor/signipedia/database/repository";
-import { resolveRequiredPostgresConnectionString } from "@/thor/utils/postgresConnection";
+import { createPostgresPool, resolveRequiredPostgresConnectionString, type PostgresPoolLike } from "@/thor/utils/postgresConnection";
+import { thorLogger } from "@/thor/utils/logger";
 
-let pool: Pool | null = null;
+let pool: PostgresPoolLike | null = null;
 let schemaReadyPromise: Promise<void> | null = null;
 let seededPromise: Promise<void> | null = null;
 
+const SCHEMA_BOOTSTRAP_LOCK_ID = 704286214;
+const BOOTSTRAP_MAX_RETRIES = 3;
+
 function resolveConnectionString() {
   return resolveRequiredPostgresConnectionString({ label: "Signipedia" });
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientConnectionError(error: unknown) {
+  const code = typeof error === "object" && error && "code" in error
+    ? String((error as { code?: unknown }).code || "")
+    : "";
+
+  return ["ETIMEDOUT", "ECONNREFUSED", "ECONNRESET", "ENETUNREACH", "EHOSTUNREACH"].includes(code);
+}
+
+async function withRetry<T>(label: string, task: () => Promise<T>) {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= BOOTSTRAP_MAX_RETRIES; attempt += 1) {
+    try {
+      return await task();
+    } catch (error) {
+      lastError = error;
+      const retryable = isTransientConnectionError(error);
+
+      thorLogger.warn("signipedia.db.bootstrap", "Attempt failed", {
+        label,
+        attempt,
+        retryable,
+        code: typeof error === "object" && error && "code" in error ? (error as { code?: unknown }).code : undefined,
+        message: error instanceof Error ? error.message : String(error),
+      });
+
+      if (!retryable || attempt >= BOOTSTRAP_MAX_RETRIES) {
+        throw error;
+      }
+
+      await delay(300 * attempt);
+    }
+  }
+
+  throw lastError;
 }
 
 function getPool() {
@@ -35,7 +80,18 @@ function getPool() {
 
   const connectionString = resolveConnectionString();
 
-  pool = new Pool({ connectionString });
+  pool = createPostgresPool({
+    connectionString,
+    max: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 10_000,
+    allowExitOnIdle: false,
+  });
+
+  thorLogger.info("signipedia.db.pool", "Initialized Postgres pool", {
+    host: new URL(connectionString).hostname,
+  });
+
   return pool;
 }
 
@@ -52,12 +108,24 @@ async function loadSchemaSql() {
   return fs.readFile(schemaPath, "utf8");
 }
 
-async function ensureSchemaReady(connection: Pool) {
+async function ensureSchemaReady(connection: PostgresPoolLike) {
   if (!schemaReadyPromise) {
-    schemaReadyPromise = (async () => {
+    schemaReadyPromise = withRetry("schema-ready", async () => {
       const schemaSql = await loadSchemaSql();
-      await connection.query(schemaSql);
-    })().catch((error) => {
+      const client = await connection.connect();
+
+      try {
+        await client.query("SELECT pg_advisory_lock($1)", [SCHEMA_BOOTSTRAP_LOCK_ID]);
+        await client.query(schemaSql);
+      } finally {
+        try {
+          await client.query("SELECT pg_advisory_unlock($1)", [SCHEMA_BOOTSTRAP_LOCK_ID]);
+        } catch {
+          // best effort unlock
+        }
+        client.release();
+      }
+    }).catch((error) => {
       schemaReadyPromise = null;
       throw error;
     });

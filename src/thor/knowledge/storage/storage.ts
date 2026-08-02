@@ -1,8 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { Pool } from "pg";
 import { del, put } from "@vercel/blob";
+import { createPostgresPool, type PostgresPoolLike } from "@/thor/utils/postgresConnection";
 
 type SaveKnowledgeSourceInput = {
   fileName: string;
@@ -37,7 +37,7 @@ export function createStorageNotConfiguredError(): StorageCapabilityError {
   };
 }
 
-let sourcePool: Pool | null = null;
+let sourcePool: PostgresPoolLike | null = null;
 let sourceSchemaReadyPromise: Promise<void> | null = null;
 
 function resolveConnectionString() {
@@ -55,11 +55,17 @@ function getSourcePool() {
     return null;
   }
 
-  sourcePool = new Pool({ connectionString });
+  sourcePool = createPostgresPool({
+    connectionString,
+    max: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 10_000,
+    allowExitOnIdle: false,
+  });
   return sourcePool;
 }
 
-async function ensureSourceSchema(connection: Pool) {
+async function ensureSourceSchema(connection: PostgresPoolLike) {
   if (!sourceSchemaReadyPromise) {
     sourceSchemaReadyPromise = connection
       .query(

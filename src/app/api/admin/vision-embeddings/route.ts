@@ -1,8 +1,8 @@
-import { Pool, type PoolClient } from "pg";
+import { type PoolClient } from "pg";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/thor/utils/adminAuth";
 import { normalizeL2, VISION_EMBEDDING_DIMENSIONS } from "@/thor/signipedia/recognition/vectorMath";
-import { resolveRequiredPostgresConnectionString } from "@/thor/utils/postgresConnection";
+import { createPostgresPool, resolveRequiredPostgresConnectionString, type PostgresPoolLike } from "@/thor/utils/postgresConnection";
 
 export const runtime = "nodejs";
 
@@ -23,7 +23,7 @@ type VisionEmbeddingRow = {
   vision_dims: number | null;
 };
 
-let pool: Pool | null = null;
+let pool: PostgresPoolLike | null = null;
 let columnsReady = false;
 
 function getPool() {
@@ -32,7 +32,13 @@ function getPool() {
   }
 
   const connectionString = resolveRequiredPostgresConnectionString({ label: "Signipedia" });
-  pool = new Pool({ connectionString });
+  pool = createPostgresPool({
+    connectionString,
+    max: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 10_000,
+    allowExitOnIdle: false,
+  });
   return pool;
 }
 

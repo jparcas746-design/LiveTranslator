@@ -1,7 +1,6 @@
-import { Pool } from "pg";
 import type { HybridMatch } from "@/thor/signipedia/recognition/types";
 import { clamp01, cosineSimilarityNormalized, normalizeL2, VISION_EMBEDDING_DIMENSIONS } from "@/thor/signipedia/recognition/vectorMath";
-import { resolveRequiredPostgresConnectionString } from "@/thor/utils/postgresConnection";
+import { createPostgresPool, resolveRequiredPostgresConnectionString, type PostgresPoolLike } from "@/thor/utils/postgresConnection";
 
 const DEFAULT_SIMILARITY_THRESHOLD = Number(process.env.THOR_RECOGNITION_VECTOR_THRESHOLD || 0.22);
 
@@ -29,7 +28,7 @@ type VectorSearchResult = {
   };
 };
 
-let pool: Pool | null = null;
+let pool: PostgresPoolLike | null = null;
 
 function getPool() {
   if (pool) {
@@ -37,7 +36,13 @@ function getPool() {
   }
 
   const connectionString = resolveRequiredPostgresConnectionString({ label: "Signipedia" });
-  pool = new Pool({ connectionString });
+  pool = createPostgresPool({
+    connectionString,
+    max: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 10_000,
+    allowExitOnIdle: false,
+  });
   return pool;
 }
 

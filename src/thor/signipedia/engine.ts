@@ -8,16 +8,48 @@ import type {
   SymbolUpsertInput,
 } from "@/thor/signipedia/types";
 import { resolveSignipediaRepository } from "@/thor/signipedia/database/resolveRepository";
+import { postgresSignipediaRepository } from "@/thor/signipedia/database/postgresRepository";
+import { inMemorySignipediaRepository } from "@/thor/signipedia/database/inMemoryRepository";
 
 export class SignipediaEngine {
-  private readonly repository = resolveSignipediaRepository();
+  private repository = resolveSignipediaRepository();
+
+  private shouldFallbackToInMemory(_error: unknown) {
+    const enableInMemoryFallback = process.env.SIGNIPEDIA_ENABLE_INMEMORY_FALLBACK === "1";
+    const forcePostgres = process.env.SIGNIPEDIA_FORCE_POSTGRES === "1";
+    const isDevelopment = process.env.NODE_ENV !== "production";
+
+    if (!enableInMemoryFallback || !isDevelopment || forcePostgres) {
+      return false;
+    }
+
+    if (this.repository !== postgresSignipediaRepository) {
+      return false;
+    }
+
+    return true;
+  }
 
   isConfigured() {
     return this.repository.isConfigured();
   }
 
   async bootstrap() {
-    await this.repository.bootstrap();
+    try {
+      await this.repository.bootstrap();
+    } catch (error) {
+      if (!this.shouldFallbackToInMemory(error)) {
+        throw error;
+      }
+
+      console.warn("SIGNIPEDIA_REPOSITORY_FALLBACK", {
+        reason: "postgres-unreachable",
+        code: typeof error === "object" && error && "code" in error ? (error as { code?: unknown }).code : undefined,
+      });
+
+      this.repository = inMemorySignipediaRepository;
+      await this.repository.bootstrap();
+    }
   }
 
   async getStats(): Promise<SignipediaCatalogStats> {

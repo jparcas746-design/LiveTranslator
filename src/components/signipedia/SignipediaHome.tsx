@@ -240,8 +240,16 @@ export function SignipediaHome({ categories, initialResults, featured, stats, ca
       }
     }
 
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, 2);
+    return pool
+      .sort((left, right) => {
+        const bySlug = left.slug.localeCompare(right.slug, "es");
+        if (bySlug !== 0) {
+          return bySlug;
+        }
+
+        return left.text.localeCompare(right.text, "es");
+      })
+      .slice(0, 2);
   }, [catalogPool]);
 
   const favoriteSymbols = useMemo(() => {

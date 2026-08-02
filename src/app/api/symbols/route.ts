@@ -24,10 +24,17 @@ export async function GET(request: Request) {
     fuzzy: true,
   });
 
-  return NextResponse.json({
-    items: results,
-    total: results.length,
-  });
+  return NextResponse.json(
+    {
+      items: results,
+      total: results.length,
+    },
+    {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      },
+    }
+  );
 }
 
 export async function POST(request: Request) {

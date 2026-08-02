@@ -1,3 +1,5 @@
+import { existsSync, readdirSync } from "node:fs";
+import path from "node:path";
 import {
   getCategoryById,
   getRelatedSymbols,
@@ -53,6 +55,51 @@ const runtime: RuntimeStore = {
   favorites: new Map(),
 };
 
+function normalizeKey(value: string) {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function resolveLocalImageMap() {
+  const mediaDir = path.resolve(process.cwd(), "public", "signipedia-media");
+  if (!existsSync(mediaDir)) {
+    return new Map<string, string>();
+  }
+
+  const files = readdirSync(mediaDir).filter((name) => /\.(png|jpe?g|webp|gif|avif)$/i.test(name));
+  const urls = files.map((name) => `/signipedia-media/${name}`);
+  const bySymbol = new Map<string, string>();
+
+  const explicitAliases: Record<string, string[]> = {
+    infinito: ["infinite"],
+    radioactivo: ["radioactividad"],
+    "fleur-de-lis": ["fleur-du-lis", "fleurdelis"],
+  };
+
+  for (const symbol of signipediaSymbols) {
+    const slugKey = normalizeKey(symbol.slug);
+    const aliasKeys = (explicitAliases[symbol.slug] || []).map((alias) => normalizeKey(alias));
+
+    const candidate = urls.find((url) => {
+      const fileKey = normalizeKey(url);
+      if (fileKey.includes(slugKey)) {
+        return true;
+      }
+
+      return aliasKeys.some((aliasKey) => aliasKey && fileKey.includes(aliasKey));
+    });
+
+    if (candidate) {
+      bySymbol.set(symbol.slug, candidate);
+    }
+  }
+
+  return bySymbol;
+}
+
 function createId(prefix: string) {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? `${prefix}-${crypto.randomUUID()}`
@@ -85,6 +132,7 @@ function ensureSeeded() {
   }
 
   const now = new Date().toISOString();
+  const localImageMap = resolveLocalImageMap();
 
   for (const category of signipediaCategories) {
     runtime.categories.set(category.id, {
@@ -118,7 +166,7 @@ function ensureSeeded() {
       isFeatured: Boolean(symbol.featured),
       description: symbol.meaning,
       canonicalGlyph: symbol.glyph,
-      imageUrl: null,
+      imageUrl: localImageMap.get(symbol.slug) || null,
       language: "es",
       createdAt: now,
       updatedAt: now,
