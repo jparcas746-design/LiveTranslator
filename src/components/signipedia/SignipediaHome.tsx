@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Bookmark, BookOpenText, Camera, Search, Settings2, Sparkles, Star, SunMoon } from "lucide-react";
+import { Activity, ArrowRight, Bookmark, BookOpenText, Camera, Clock3, Database, Layers3, Lightbulb, Search, Settings2, Shuffle, Sparkles, SunMoon, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SymbolRecognitionModal } from "@/components/signipedia/SymbolRecognitionModal";
 import { ToastViewport } from "@/components/ui/ToastViewport";
@@ -19,6 +19,13 @@ type SignipediaHomeProps = {
   initialResults: SearchHit[];
   featured: SearchHit[];
   stats: SignipediaCatalogStats;
+  catalogSnapshot: SearchHit[];
+};
+
+type CuriosityItem = {
+  slug: string;
+  symbolName: string;
+  text: string;
 };
 
 function symbolAccent(categorySlug?: string) {
@@ -86,7 +93,7 @@ function buildQueryUrl(query: string, categorySlug: string) {
   return `/api/search?${params.toString()}`;
 }
 
-export function SignipediaHome({ categories, initialResults, featured, stats }: SignipediaHomeProps) {
+export function SignipediaHome({ categories, initialResults, featured, stats, catalogSnapshot }: SignipediaHomeProps) {
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [sortMode, setSortMode] = useState<SortMode>("featured");
@@ -98,6 +105,7 @@ export function SignipediaHome({ categories, initialResults, featured, stats }: 
   const [recognitionOpen, setRecognitionOpen] = useState(false);
   const { theme, mounted: themeMounted, toggleTheme } = useTheme();
   const { toasts, removeToast, showToast } = useToast();
+  const [randomSymbolSlug, setRandomSymbolSlug] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -155,8 +163,86 @@ export function SignipediaHome({ categories, initialResults, featured, stats }: 
   }, [query, selectedCategory]);
 
   const categoryById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
+  const catalogPool = useMemo(() => {
+    const lookup = new Map<string, SearchHit>();
+    for (const hit of [...catalogSnapshot, ...initialResults, ...featured]) {
+      if (!lookup.has(hit.symbol.slug)) {
+        lookup.set(hit.symbol.slug, hit);
+      }
+    }
+
+    return Array.from(lookup.values());
+  }, [catalogSnapshot, featured, initialResults]);
+
   const currentResults = useMemo(() => sortResults(remoteResults.length > 0 || query.trim() || selectedCategory !== "all" ? remoteResults : initialResults, sortMode), [initialResults, query, remoteResults, selectedCategory, sortMode]);
-  const spotlight = currentResults[0] || featured[0] || initialResults[0] || null;
+
+  useEffect(() => {
+    if (catalogPool.length === 0 || randomSymbolSlug) {
+      return;
+    }
+
+    const randomIndex = Math.floor(Math.random() * catalogPool.length);
+    setRandomSymbolSlug(catalogPool[randomIndex]?.symbol.slug || null);
+  }, [catalogPool, randomSymbolSlug]);
+
+  const randomSymbol = useMemo(
+    () => catalogPool.find((item) => item.symbol.slug === randomSymbolSlug) || catalogPool[0] || null,
+    [catalogPool, randomSymbolSlug]
+  );
+
+  const latestSymbols = useMemo(() => {
+    return [...catalogPool]
+      .sort((left, right) => {
+        const leftTime = Date.parse(left.symbol.updatedAt || left.symbol.createdAt || "") || 0;
+        const rightTime = Date.parse(right.symbol.updatedAt || right.symbol.createdAt || "") || 0;
+        return rightTime - leftTime;
+      })
+      .slice(0, 5);
+  }, [catalogPool]);
+
+  const popularCategories = useMemo(() => {
+    const counts = new Map<string, { category: SignipediaCategory | null; count: number }>();
+
+    for (const hit of catalogPool) {
+      const key = hit.category?.id || "uncategorized";
+      const current = counts.get(key);
+      if (current) {
+        current.count += 1;
+        continue;
+      }
+
+      counts.set(key, {
+        category: hit.category || categoryById.get(hit.symbol.categoryId) || null,
+        count: 1,
+      });
+    }
+
+    return Array.from(counts.values())
+      .sort((left, right) => right.count - left.count || (left.category?.name || "").localeCompare(right.category?.name || "", "es"))
+      .slice(0, 5);
+  }, [catalogPool, categoryById]);
+
+  const curiosities = useMemo(() => {
+    const pool: CuriosityItem[] = [];
+
+    for (const hit of catalogPool) {
+      for (const curiosity of hit.symbol.curiosities || []) {
+        const text = curiosity.trim();
+        if (!text) {
+          continue;
+        }
+
+        pool.push({
+          slug: hit.symbol.slug,
+          symbolName: hit.symbol.name,
+          text,
+        });
+      }
+    }
+
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, 2);
+  }, [catalogPool]);
 
   const favoriteSymbols = useMemo(() => {
     const lookup = new Map<string, SearchHit["symbol"]>();
@@ -204,6 +290,24 @@ export function SignipediaHome({ categories, initialResults, featured, stats }: 
     setQuery("");
     setSelectedCategory("all");
     setSortMode("featured");
+  }
+
+  function discoverRandomSymbol() {
+    if (catalogPool.length === 0) {
+      return;
+    }
+
+    if (catalogPool.length === 1) {
+      setRandomSymbolSlug(catalogPool[0].symbol.slug);
+      return;
+    }
+
+    let next = catalogPool[Math.floor(Math.random() * catalogPool.length)]?.symbol.slug || null;
+    while (next && next === randomSymbolSlug) {
+      next = catalogPool[Math.floor(Math.random() * catalogPool.length)]?.symbol.slug || null;
+    }
+
+    setRandomSymbolSlug(next);
   }
 
   return (
@@ -272,39 +376,120 @@ export function SignipediaHome({ categories, initialResults, featured, stats }: 
             </div>
           </div>
 
-          <aside className="signipedia-hero-panel">
-            <div className="signipedia-hero-panel-head">
-              <span>Ficha destacada</span>
-              <Star size={16} aria-hidden="true" />
-            </div>
+          <aside className="signipedia-hero-panel signipedia-hero-dashboard">
+            <section className="signipedia-dash-card signipedia-dash-card-lg">
+              <div className="signipedia-dash-head">
+                <span>Símbolo aleatorio</span>
+                <Shuffle size={15} aria-hidden="true" />
+              </div>
+              {randomSymbol ? (
+                <>
+                  <strong>{randomSymbol.symbol.name}</strong>
+                  <p>{randomSymbol.symbol.meaning}</p>
+                  <div className="signipedia-dash-row">
+                    <button type="button" className="signipedia-text-button" onClick={discoverRandomSymbol}>
+                      Descubrir un símbolo
+                    </button>
+                    <Link href={`/symbols/${randomSymbol.symbol.slug}`} className="signipedia-dash-link">
+                      Abrir
+                    </Link>
+                  </div>
+                </>
+              ) : (
+                <p className="signipedia-muted">Sin símbolos disponibles por el momento.</p>
+              )}
+            </section>
 
-            {spotlight ? (
-              <>
-                {spotlight.symbol.imageUrl ? (
-                  <div className="signipedia-card-image">
-                    <img src={spotlight.symbol.imageUrl} alt={spotlight.symbol.name} loading="lazy" />
-                  </div>
-                ) : (
-                  <div className={`signipedia-glyph signipedia-glyph-${symbolAccent(spotlight.category?.slug)}`}>
-                    {spotlight.symbol.canonicalGlyph}
-                  </div>
-                )}
-                <h2>{spotlight.symbol.name}</h2>
-                <p>{spotlight.symbol.meaning}</p>
-                <div className="signipedia-inline-meta">
-                  <span>{spotlight.category?.name}</span>
-                  <span>{spotlight.symbol.origin}</span>
-                </div>
-                <div className="signipedia-hero-panel-actions">
-                  <Link href={`/symbols/${spotlight.symbol.slug}`} className="btn btn-primary btn-md">
-                    Ver ficha completa
-                  </Link>
-                  <button type="button" className="signipedia-icon-button" onClick={() => toggleFavorite(spotlight.symbol.slug, spotlight.symbol.name)}>
-                    <Bookmark size={16} />
-                  </button>
-                </div>
-              </>
-            ) : null}
+            <section className="signipedia-dash-card">
+              <div className="signipedia-dash-head">
+                <span>¿Sabías que...?</span>
+                <Lightbulb size={15} aria-hidden="true" />
+              </div>
+              {curiosities.length > 0 ? (
+                <ul className="signipedia-dash-list">
+                  {curiosities.map((item) => (
+                    <li key={`${item.slug}-${item.text.slice(0, 20)}`}>
+                      <p>{item.text}</p>
+                      <Link href={`/symbols/${item.slug}`}>{item.symbolName}</Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="signipedia-muted">Aún no hay curiosidades registradas en catálogo.</p>
+              )}
+            </section>
+
+            <section className="signipedia-dash-card">
+              <div className="signipedia-dash-head">
+                <span>Categorías populares</span>
+                <Layers3 size={15} aria-hidden="true" />
+              </div>
+              <ol className="signipedia-dash-ranking">
+                {popularCategories.map((entry) => (
+                  <li key={entry.category?.id || "uncategorized"}>
+                    <span>{entry.category?.name || "Sin categoría"}</span>
+                    <strong>{entry.count}</strong>
+                  </li>
+                ))}
+              </ol>
+            </section>
+
+            <section className="signipedia-dash-card">
+              <div className="signipedia-dash-head">
+                <span>Últimos símbolos añadidos</span>
+                <Clock3 size={15} aria-hidden="true" />
+              </div>
+              <ul className="signipedia-dash-symbols">
+                {latestSymbols.map((hit) => (
+                  <li key={hit.symbol.slug}>
+                    <Link href={`/symbols/${hit.symbol.slug}`}>{hit.symbol.name}</Link>
+                    <small>{new Date(hit.symbol.updatedAt || hit.symbol.createdAt).toLocaleDateString("es-ES")}</small>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="signipedia-dash-card signipedia-dash-card-lg">
+              <div className="signipedia-dash-head">
+                <span>Actividad del catálogo</span>
+                <Activity size={15} aria-hidden="true" />
+              </div>
+              <div className="signipedia-dash-metrics">
+                <article>
+                  <span>Símbolos</span>
+                  <strong>{stats.symbolCount}</strong>
+                </article>
+                <article>
+                  <span>Categorías</span>
+                  <strong>{stats.categoryCount}</strong>
+                </article>
+                <article>
+                  <span>Sinónimos</span>
+                  <strong>{stats.synonymCount}</strong>
+                </article>
+                <article>
+                  <span>Imágenes</span>
+                  <strong>{stats.imageCount}</strong>
+                </article>
+                <article>
+                  <span>Embeddings</span>
+                  <strong>{stats.visionEmbeddingCount}</strong>
+                </article>
+              </div>
+            </section>
+
+            <section className="signipedia-dash-card">
+              <div className="signipedia-dash-head">
+                <span>Próximamente</span>
+                <Wrench size={15} aria-hidden="true" />
+              </div>
+              <ul className="signipedia-dash-roadmap">
+                <li><Database size={13} /> OCR</li>
+                <li><Camera size={13} /> Cámara</li>
+                <li><Sparkles size={13} /> Comparador de símbolos</li>
+                <li><Sparkles size={13} /> IA mejorada</li>
+              </ul>
+            </section>
           </aside>
         </section>
 

@@ -450,6 +450,8 @@ export const postgresSignipediaRepository: SignipediaRepository = {
       alias_count: string;
       tag_count: string;
       synonym_count: string;
+      image_count: string;
+      vision_embedding_count: string;
     }>(
       `
       SELECT
@@ -458,7 +460,9 @@ export const postgresSignipediaRepository: SignipediaRepository = {
         (SELECT COUNT(*)::text FROM signipedia_symbols WHERE is_featured = true) AS featured_count,
         (SELECT COUNT(*)::text FROM signipedia_symbol_aliases) AS alias_count,
         (SELECT COUNT(*)::text FROM signipedia_symbol_tags) AS tag_count,
-        (SELECT COUNT(*)::text FROM signipedia_symbol_synonyms) AS synonym_count
+        (SELECT COUNT(*)::text FROM signipedia_symbol_synonyms) AS synonym_count,
+        (SELECT COUNT(*)::text FROM signipedia_media WHERE kind = 'image') AS image_count,
+        (SELECT COUNT(*)::text FROM signipedia_symbols WHERE vision_embedding IS NOT NULL AND vector_dims(vision_embedding) = 512) AS vision_embedding_count
       `
     );
 
@@ -470,6 +474,8 @@ export const postgresSignipediaRepository: SignipediaRepository = {
       aliasCount: Number(row.alias_count || 0),
       tagCount: Number(row.tag_count || 0),
       synonymCount: Number(row.synonym_count || 0),
+      imageCount: Number(row.image_count || 0),
+      visionEmbeddingCount: Number(row.vision_embedding_count || 0),
     };
   },
 

@@ -139,6 +139,8 @@ export type SignipediaCatalogStats = {
   aliasCount: number;
   tagCount: number;
   synonymCount: number;
+  imageCount: number;
+  visionEmbeddingCount: number;
 };
 
 export type SymbolUpsertInput = {

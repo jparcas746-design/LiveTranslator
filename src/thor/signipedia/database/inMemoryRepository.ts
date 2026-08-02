@@ -263,6 +263,10 @@ export const inMemorySignipediaRepository: SignipediaRepository = {
   async getStats() {
     ensureSeeded();
     const symbols = Array.from(runtime.symbols.values());
+    const imageCount = Array.from(runtime.media.values()).reduce(
+      (sum, entries) => sum + entries.filter((item) => item.kind === "image").length,
+      0
+    );
     return {
       symbolCount: symbols.length,
       categoryCount: runtime.categories.size,
@@ -270,6 +274,8 @@ export const inMemorySignipediaRepository: SignipediaRepository = {
       aliasCount: Array.from(runtime.aliases.values()).reduce((sum, entries) => sum + entries.length, 0),
       tagCount: Array.from(runtime.tags.values()).reduce((sum, entries) => sum + entries.length, 0),
       synonymCount: Array.from(runtime.synonyms.values()).reduce((sum, entries) => sum + entries.length, 0),
+      imageCount,
+      visionEmbeddingCount: 0,
     };
   },
 
