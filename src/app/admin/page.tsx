@@ -29,8 +29,9 @@ import {
 } from "lucide-react";
 import { fetchJson } from "@/lib/fetchJson";
 import { Button } from "@/components/ui/Button";
-import { normalizeL2, VISION_EMBEDDING_DIMENSIONS } from "@/thor/signipedia/recognition/vectorMath";
+import { VISION_EMBEDDING_DIMENSIONS } from "@/thor/signipedia/recognition/vectorMath";
 import { CLIP_VISION_MODEL_ID } from "@/thor/signipedia/recognition/clipConfig";
+import { generateClipImageEmbedding, isClipRuntimeLoaded, loadClipVisionRuntime, type ClipEmbeddingReport } from "@/lib/clipVisionClient";
 
 type AdminCategory = {
   id: string;
@@ -74,10 +75,14 @@ type AdminSymbolHit = {
 
 type AdminSummaryResponse = {
   summary: {
-    categories: number;
-    symbols: number;
-    seededCategories: number;
-    seededSymbols: number;
+    categories?: number;
+    symbols?: number;
+    seededCategories?: number;
+    seededSymbols?: number;
+    symbolCount?: number;
+    categoryCount?: number;
+    featuredCount?: number;
+    aliasCount?: number;
   };
   items: {
     categories: AdminCategory[];
@@ -152,13 +157,15 @@ type VisionBackfillProgress = {
   currentSlug: string;
 };
 
-type ClipRuntime = {
-  modelId: string;
-  processor: (input: unknown) => Promise<Record<string, unknown>>;
-  model: (inputs: Record<string, unknown>) => Promise<Record<string, unknown>>;
-  RawImage: {
-    fromBlob: (blob: Blob) => Promise<unknown>;
-  };
+
+type AdminVisionSaveResponse = {
+  ok: boolean;
+  skipped: boolean;
+  reason?: string;
+  slug?: string;
+  persisted?: boolean;
+  dimensions?: number;
+  source?: string | null;
 };
 
 const EMPTY_SYMBOL_FORM: SymbolFormState = {
@@ -233,12 +240,33 @@ export default function AdminPage() {
   const [backfillProgress, setBackfillProgress] = useState<VisionBackfillProgress | null>(null);
   const [backfillLogs, setBackfillLogs] = useState<string[]>([]);
   const [backfillTotals, setBackfillTotals] = useState<VisionEmbeddingQueueResponse["totals"] | null>(null);
+  const [visionModelLoaded, setVisionModelLoaded] = useState(false);
+  const [visionModelStatus, setVisionModelStatus] = useState("Modelo no cargado.");
+  const [visionEmbeddingStatus, setVisionEmbeddingStatus] = useState("Sin embedding generado.");
+  const [visionSelectedImage, setVisionSelectedImage] = useState<File | null>(null);
+  const [visionPreviewUrl, setVisionPreviewUrl] = useState<string | null>(null);
+  const [visionEmbeddingReport, setVisionEmbeddingReport] = useState<ClipEmbeddingReport | null>(null);
+  const [visionLoadingModel, setVisionLoadingModel] = useState(false);
+  const [visionGenerating, setVisionGenerating] = useState(false);
+  const [visionSaving, setVisionSaving] = useState(false);
+  const [visionSaveMessage, setVisionSaveMessage] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const clipRuntimeRef = useRef<ClipRuntime | null>(null);
   const selectedSymbol = useMemo(
     () => symbols.find((item) => item.symbol.slug === selectedSymbolSlug) || null,
     [symbols, selectedSymbolSlug]
   );
+  const visionTargetSymbol = useMemo(() => {
+    if (selectedSymbol) {
+      return selectedSymbol;
+    }
+
+    const formSlug = symbolForm.slug.trim();
+    if (!formSlug) {
+      return null;
+    }
+
+    return symbols.find((item) => item.symbol.slug === formSlug) || null;
+  }, [selectedSymbol, symbolForm.slug, symbols]);
 
   const filteredSymbols = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -309,10 +337,14 @@ export default function AdminPage() {
 
     setSummary(result.data.summary);
     setCategories(result.data.items.categories || []);
-    setSymbols(result.data.items.symbols || []);
-    setStatus(`Catálogo cargado: ${result.data.summary.symbols} símbolos`);
+    const nextSymbols = result.data.items.symbols || [];
+    setSymbols(nextSymbols);
+    if (!selectedSymbolSlug && nextSymbols.length > 0) {
+      setSelectedSymbolSlug(nextSymbols[0].symbol.slug);
+    }
+    setStatus(`Catálogo cargado: ${result.data.summary.symbolCount ?? result.data.summary.symbols ?? 0} símbolos`);
     setLoading(false);
-  }, [router]);
+  }, [router, selectedSymbolSlug]);
 
   useEffect(() => {
     void (async () => {
@@ -359,6 +391,25 @@ export default function AdminPage() {
 
     setSymbolForm(EMPTY_SYMBOL_FORM);
   }, [selectedSymbol]);
+
+  useEffect(() => {
+    setVisionEmbeddingReport(null);
+    setVisionEmbeddingStatus("Sin embedding generado.");
+    setVisionSaveMessage(null);
+    setVisionSelectedImage(null);
+    if (visionPreviewUrl) {
+      URL.revokeObjectURL(visionPreviewUrl);
+      setVisionPreviewUrl(null);
+    }
+  }, [selectedSymbolSlug]);
+
+  useEffect(() => {
+    return () => {
+      if (visionPreviewUrl) {
+        URL.revokeObjectURL(visionPreviewUrl);
+      }
+    };
+  }, [visionPreviewUrl]);
 
   useEffect(() => {
     if (!symbolForm.categoryId && categoryOptions.length > 0) {
@@ -572,28 +623,7 @@ export default function AdminPage() {
   }, []);
 
   const loadClipRuntime = useCallback(async () => {
-    if (clipRuntimeRef.current) {
-      return clipRuntimeRef.current;
-    }
-
-    const transformers = await import("@huggingface/transformers");
-    const { env, AutoProcessor, CLIPVisionModelWithProjection, RawImage } = transformers;
-
-    env.allowLocalModels = false;
-    env.useBrowserCache = true;
-
-    const modelId = CLIP_VISION_MODEL_ID;
-    const processor = await AutoProcessor.from_pretrained(modelId);
-    const model = await CLIPVisionModelWithProjection.from_pretrained(modelId);
-
-    clipRuntimeRef.current = {
-      modelId,
-      processor: processor as ClipRuntime["processor"],
-      model: model as ClipRuntime["model"],
-      RawImage: RawImage as ClipRuntime["RawImage"],
-    };
-
-    return clipRuntimeRef.current;
+    return loadClipVisionRuntime();
   }, []);
 
   const generateVisionEmbeddings = useCallback(async () => {
@@ -626,7 +656,7 @@ export default function AdminPage() {
 
     setStatus(`Cargando CLIP para procesar ${pending.length} símbolos...`);
 
-    let runtime: ClipRuntime;
+    let runtime: Awaited<ReturnType<typeof loadClipRuntime>>;
     try {
       runtime = await loadClipRuntime();
       pushBackfillLog(`Modelo CLIP cargado: ${runtime.modelId}`);
@@ -667,23 +697,10 @@ export default function AdminPage() {
         }
 
         const blob = await imageResponse.blob();
-        const rawImage = await runtime.RawImage.fromBlob(blob);
-        const processed = await runtime.processor(rawImage);
-        const output = await runtime.model(processed);
-        const tensor = output.image_embeds as { data?: Float32Array | number[] } | undefined;
-
-        if (!tensor?.data) {
-          throw new Error("CLIP no devolvió image_embeds");
-        }
-
-        const values = Array.from(tensor.data);
-        if (values.length !== VISION_EMBEDDING_DIMENSIONS) {
-          throw new Error(`Dimensión inesperada ${values.length}. Se esperaba ${VISION_EMBEDDING_DIMENSIONS}`);
-        }
-
-        const normalized = normalizeL2(values);
-        if (!normalized) {
-          throw new Error("No se pudo normalizar el embedding (norma cero)");
+        await loadClipRuntime();
+        const report = await generateClipImageEmbedding(blob);
+        if (report.length !== VISION_EMBEDDING_DIMENSIONS) {
+          throw new Error(`Dimensión inesperada ${report.length}. Se esperaba ${VISION_EMBEDDING_DIMENSIONS}`);
         }
 
         const saveResult = await fetchJson<{ ok: boolean; skipped: boolean; reason?: string }>("/api/admin/vision-embeddings", {
@@ -693,7 +710,7 @@ export default function AdminPage() {
           body: JSON.stringify({
             symbolId: item.symbolId,
             imageUrl: item.imageUrl,
-            embedding: normalized,
+            embedding: report.vector,
           }),
         });
 
@@ -739,6 +756,145 @@ export default function AdminPage() {
     await loadData();
     setIsBackfilling(false);
   }, [loadClipRuntime, loadData, pushBackfillLog]);
+
+  const loadVisionModel = useCallback(async () => {
+    if (visionModelLoaded || isClipRuntimeLoaded()) {
+      setVisionModelLoaded(true);
+      setVisionModelStatus(`✅ Modelo cargado correctamente: ${CLIP_VISION_MODEL_ID}`);
+      return;
+    }
+
+    setVisionLoadingModel(true);
+    setVisionModelStatus("Cargando Transformers.js y modelo CLIP...");
+
+    try {
+      const runtime = await loadClipRuntime();
+      setVisionModelLoaded(true);
+      setVisionModelStatus(`✅ Modelo cargado correctamente: ${runtime.modelId}`);
+    } catch (error) {
+      setVisionModelLoaded(false);
+      setVisionModelStatus(`Error al cargar CLIP: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setVisionLoadingModel(false);
+    }
+  }, [loadClipRuntime, visionModelLoaded]);
+
+  const onVisionImageSelected = useCallback((file: File | null) => {
+    setVisionSelectedImage(file);
+    setVisionEmbeddingReport(null);
+    setVisionEmbeddingStatus("Sin embedding generado.");
+    setVisionSaveMessage(null);
+
+    if (visionPreviewUrl) {
+      URL.revokeObjectURL(visionPreviewUrl);
+      setVisionPreviewUrl(null);
+    }
+
+    if (file) {
+      setVisionPreviewUrl(URL.createObjectURL(file));
+    }
+  }, [visionPreviewUrl]);
+
+  const generateVisionEmbedding = useCallback(async () => {
+    if (!visionSelectedImage) {
+      setVisionEmbeddingStatus("Selecciona una imagen antes de generar el embedding.");
+      return;
+    }
+
+    if (!visionModelLoaded && !isClipRuntimeLoaded()) {
+      setVisionEmbeddingStatus("Primero carga el modelo CLIP.");
+      return;
+    }
+
+    setVisionGenerating(true);
+    setVisionEmbeddingStatus("Generando embedding de imagen...");
+    setVisionSaveMessage(null);
+
+    try {
+      const report = await generateClipImageEmbedding(visionSelectedImage);
+      if (report.length !== VISION_EMBEDDING_DIMENSIONS) {
+        throw new Error(`Dimensión inválida: ${report.length}`);
+      }
+
+      setVisionEmbeddingReport(report);
+      setVisionEmbeddingStatus("Embedding generado correctamente.");
+    } catch (error) {
+      setVisionEmbeddingReport(null);
+      setVisionEmbeddingStatus(`Error al generar embedding: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setVisionGenerating(false);
+    }
+  }, [visionModelLoaded, visionSelectedImage]);
+
+  const saveVisionEmbedding = useCallback(async () => {
+    if (!visionEmbeddingReport) {
+      return;
+    }
+
+    if (!visionTargetSymbol) {
+      setVisionSaveMessage("❌ No hay un símbolo persistido para guardar el embedding. Selecciona uno existente o guarda primero el símbolo actual.");
+      return;
+    }
+
+    const source = visionTargetSymbol.symbol.imageUrl?.trim() || `manual-upload://${visionTargetSymbol.symbol.slug}/${Date.now()}-${visionSelectedImage?.name || "image"}`;
+
+    setVisionSaving(true);
+    setVisionSaveMessage(null);
+
+    try {
+      const result = await fetchJson<AdminVisionSaveResponse>("/api/admin/vision-embeddings", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbolId: visionTargetSymbol.symbol.id,
+          imageUrl: source,
+          embedding: visionEmbeddingReport.vector,
+          force: true,
+        }),
+      });
+
+      if (!result.ok) {
+        setVisionSaveMessage(`❌ Error al guardar: ${result.message}`);
+        return;
+      }
+
+      const verifyResult = await fetchJson<VisionEmbeddingQueueResponse>("/api/admin/vision-embeddings", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      if (!verifyResult.ok) {
+        setVisionSaveMessage(`❌ Guardado sin verificación: ${verifyResult.message}`);
+        return;
+      }
+
+      const current = verifyResult.data.queue.find((item) => item.symbolId === visionTargetSymbol.symbol.id);
+      if (!current) {
+        setVisionSaveMessage("❌ No se pudo verificar el símbolo después del guardado.");
+        return;
+      }
+
+      if (current.currentDimensions !== VISION_EMBEDDING_DIMENSIONS) {
+        setVisionSaveMessage(
+          `❌ Verificación fallida: vision_embedding con dimensión ${current.currentDimensions ?? "NULL"}.`
+        );
+        return;
+      }
+
+      if (result.data.skipped) {
+        setVisionSaveMessage("✅ Embedding guardado correctamente. (sin cambios, ya estaba vigente)");
+      } else {
+        setVisionSaveMessage("✅ Embedding guardado correctamente.");
+      }
+
+      setBackfillTotals(verifyResult.data.totals);
+      await loadData();
+    } finally {
+      setVisionSaving(false);
+    }
+  }, [loadData, visionEmbeddingReport, visionSelectedImage, visionTargetSymbol]);
 
   if (authState === "checking") {
     return (
@@ -871,13 +1027,13 @@ export default function AdminPage() {
         <section className="admin-cms-kpis admin-enter">
           <article className="admin-card">
             <div className="text-sm text-thor-muted">Símbolos</div>
-            <div className="mt-2 text-3xl font-bold">{summary?.symbols ?? 0}</div>
-            <div className="mt-2 text-xs text-thor-muted">Seed: {summary?.seededSymbols ?? 0}</div>
+            <div className="mt-2 text-3xl font-bold">{summary?.symbolCount ?? summary?.symbols ?? 0}</div>
+            <div className="mt-2 text-xs text-thor-muted">Featured: {summary?.featuredCount ?? 0}</div>
           </article>
           <article className="admin-card">
             <div className="text-sm text-thor-muted">Categorías</div>
-            <div className="mt-2 text-3xl font-bold">{summary?.categories ?? 0}</div>
-            <div className="mt-2 text-xs text-thor-muted">Seed: {summary?.seededCategories ?? 0}</div>
+            <div className="mt-2 text-3xl font-bold">{summary?.categoryCount ?? summary?.categories ?? 0}</div>
+            <div className="mt-2 text-xs text-thor-muted">Aliases: {summary?.aliasCount ?? 0}</div>
           </article>
           <article className="admin-card admin-card-wide">
             <div className="text-sm text-thor-muted">Estado</div>
@@ -1068,6 +1224,96 @@ export default function AdminPage() {
                     <span className="admin-field-label">Medios / URLs (una por línea)</span>
                     <textarea className="admin-textarea" value={symbolForm.mediaLines} onChange={(event) => setSymbolForm((current) => ({ ...current, mediaLines: event.target.value }))} placeholder="/signipedia-media/symbol.png" />
                   </label>
+                </div>
+              </section>
+
+              <section className="admin-editor-section">
+                <header className="admin-editor-section-head">
+                  <div className="admin-editor-section-icon">
+                    <Sparkles size={16} />
+                  </div>
+                  <div>
+                    <h3>Vision Test</h3>
+                    <p>Genera y guarda embeddings CLIP para el símbolo actual sin salir del panel.</p>
+                  </div>
+                </header>
+
+                <div className="admin-vision-test">
+                  <h4>1) Cargar modelo CLIP</h4>
+                  <button
+                    type="button"
+                    className="admin-tool-pill admin-tool-pill-upload inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold"
+                    onClick={() => {
+                      void loadVisionModel();
+                    }}
+                    disabled={visionLoadingModel}
+                  >
+                    {visionLoadingModel ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                    {visionLoadingModel ? "Cargando CLIP..." : "Cargar CLIP"}
+                  </button>
+
+                  <p><strong>Estado del modelo:</strong> {visionModelStatus}</p>
+                  <p className="admin-vision-help">{visionModelLoaded ? "Transformers.js activo en el panel." : "Aún no se ha validado la carga del modelo."}</p>
+
+                  <hr className="admin-vision-divider" />
+
+                  <h4>2) Subir imagen y generar embedding</h4>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => {
+                      onVisionImageSelected(event.target.files?.[0] || null);
+                      event.currentTarget.value = "";
+                    }}
+                  />
+
+                  {visionPreviewUrl ? (
+                    <div className="admin-vision-preview">
+                      <img src={visionPreviewUrl} alt="Vista previa de Vision Test" />
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="admin-tool-pill admin-tool-pill-new inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold"
+                      onClick={() => {
+                        void generateVisionEmbedding();
+                      }}
+                      disabled={!visionSelectedImage || visionGenerating || (!visionModelLoaded && !isClipRuntimeLoaded())}
+                    >
+                      {visionGenerating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                      {visionGenerating ? "Generando embedding..." : "Generar embedding"}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="admin-tool-pill admin-tool-pill-neutral inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold"
+                      onClick={() => {
+                        void saveVisionEmbedding();
+                      }}
+                      disabled={!visionEmbeddingReport || visionSaving}
+                    >
+                      {visionSaving ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                      {visionSaving ? "Guardando..." : "Guardar embedding en la base de datos"}
+                    </button>
+                  </div>
+
+                  <p><strong>Estado del embedding:</strong> {visionEmbeddingStatus}</p>
+                  <p className="admin-vision-help">
+                    <strong>Símbolo objetivo:</strong> {visionTargetSymbol ? `${visionTargetSymbol.symbol.slug} (${visionTargetSymbol.symbol.id})` : "No resuelto"}
+                  </p>
+
+                  {visionEmbeddingReport ? (
+                    <div className="admin-vision-report">
+                      <p><strong>Embedding generado:</strong> Sí</p>
+                      <p><strong>Dimensiones:</strong> {JSON.stringify(visionEmbeddingReport.dims)}</p>
+                      <p><strong>Longitud:</strong> {visionEmbeddingReport.length}</p>
+                      <p><strong>Primeros valores:</strong> {visionEmbeddingReport.preview.join(", ")}</p>
+                    </div>
+                  ) : null}
+
+                  {visionSaveMessage ? <p className="admin-vision-save-message">{visionSaveMessage}</p> : null}
                 </div>
               </section>
 

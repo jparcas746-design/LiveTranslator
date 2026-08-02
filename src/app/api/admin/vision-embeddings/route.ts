@@ -1,10 +1,17 @@
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/thor/utils/adminAuth";
 import { normalizeL2, VISION_EMBEDDING_DIMENSIONS } from "@/thor/signipedia/recognition/vectorMath";
 import { resolveRequiredPostgresConnectionString } from "@/thor/utils/postgresConnection";
 
 export const runtime = "nodejs";
+
+type PgError = Error & {
+  code?: string;
+  detail?: string;
+  hint?: string;
+  constraint?: string;
+};
 
 type VisionEmbeddingRow = {
   id: string;
@@ -130,6 +137,45 @@ function formatVectorForPg(values: number[]) {
   return `[${values.map((value) => Number(value.toFixed(8))).join(",")}]`;
 }
 
+function formatPgError(error: unknown) {
+  if (error instanceof Error) {
+    const pgError = error as PgError;
+    const segments = [pgError.message];
+
+    if (pgError.code) {
+      segments.push(`code=${pgError.code}`);
+    }
+    if (pgError.detail) {
+      segments.push(`detail=${pgError.detail}`);
+    }
+    if (pgError.constraint) {
+      segments.push(`constraint=${pgError.constraint}`);
+    }
+    if (pgError.hint) {
+      segments.push(`hint=${pgError.hint}`);
+    }
+
+    return segments.join(" | ");
+  }
+
+  return String(error);
+}
+
+async function withTransaction<T>(task: (client: PoolClient) => Promise<T>) {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await task(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function parseEmbedding(input: unknown) {
   if (!Array.isArray(input)) {
     return { ok: false as const, reason: "embedding must be an array" };
@@ -212,64 +258,128 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.reason }, { status: 400 });
   }
 
-  await ensureVisionColumns();
-  const connection = getPool();
+  try {
+    await ensureVisionColumns();
 
-  const current = await connection.query<{
-    slug: string;
-    vision_embedding_source: string | null;
-    vision_dims: number | null;
-  }>(
-    `
-    SELECT
-      slug,
-      vision_embedding_source,
-      CASE WHEN vision_embedding IS NULL THEN NULL ELSE vector_dims(vision_embedding) END AS vision_dims
-    FROM signipedia_symbols
-    WHERE id = $1
-    LIMIT 1
-    `,
-    [symbolId]
-  );
+    const result = await withTransaction(async (client) => {
+      const current = await client.query<{
+        slug: string;
+        vision_embedding_source: string | null;
+        vision_dims: number | null;
+      }>(
+        `
+        SELECT
+          slug,
+          vision_embedding_source,
+          CASE WHEN vision_embedding IS NULL THEN NULL ELSE vector_dims(vision_embedding) END AS vision_dims
+        FROM signipedia_symbols
+        WHERE id = $1
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [symbolId]
+      );
 
-  const row = current.rows[0];
-  if (!row) {
-    return NextResponse.json({ error: "Symbol not found" }, { status: 404 });
-  }
+      const row = current.rows[0];
+      if (!row) {
+        return { kind: "not-found" as const };
+      }
 
-  const shouldSkip =
-    !force &&
-    row.vision_dims === VISION_EMBEDDING_DIMENSIONS &&
-    (row.vision_embedding_source || "") === imageUrl;
+      const shouldSkip =
+        !force &&
+        row.vision_dims === VISION_EMBEDDING_DIMENSIONS &&
+        (row.vision_embedding_source || "") === imageUrl;
 
-  if (shouldSkip) {
+      if (shouldSkip) {
+        return {
+          kind: "skipped" as const,
+          slug: row.slug,
+        };
+      }
+
+      const vectorLiteral = formatVectorForPg(parsed.normalized);
+
+      const updated = await client.query(
+        `
+        UPDATE signipedia_symbols
+        SET
+          vision_embedding = $1::vector,
+          vision_embedding_source = $2,
+          updated_at = NOW()
+        WHERE id = $3
+        `,
+        [vectorLiteral, imageUrl, symbolId]
+      );
+
+      if (updated.rowCount !== 1) {
+        throw new Error(`No se pudo actualizar el símbolo. rowCount=${updated.rowCount || 0}`);
+      }
+
+      const verification = await client.query<{
+        slug: string;
+        vision_embedding_source: string | null;
+        vision_dims: number | null;
+        has_embedding: boolean;
+      }>(
+        `
+        SELECT
+          slug,
+          vision_embedding_source,
+          CASE WHEN vision_embedding IS NULL THEN NULL ELSE vector_dims(vision_embedding) END AS vision_dims,
+          vision_embedding IS NOT NULL AS has_embedding
+        FROM signipedia_symbols
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [symbolId]
+      );
+
+      const verified = verification.rows[0];
+      if (!verified) {
+        throw new Error("No se pudo verificar el símbolo después del UPDATE");
+      }
+
+      if (!verified.has_embedding || verified.vision_dims !== VISION_EMBEDDING_DIMENSIONS) {
+        throw new Error(
+          `Verificación fallida: has_embedding=${String(verified.has_embedding)}, dims=${verified.vision_dims ?? "null"}`
+        );
+      }
+
+      return {
+        kind: "updated" as const,
+        slug: verified.slug,
+        visionSource: verified.vision_embedding_source,
+        dimensions: verified.vision_dims,
+      };
+    });
+
+    if (result.kind === "not-found") {
+      return NextResponse.json({ error: "Symbol not found" }, { status: 404 });
+    }
+
+    if (result.kind === "skipped") {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        reason: "up-to-date",
+        slug: result.slug,
+      });
+    }
+
     return NextResponse.json({
       ok: true,
-      skipped: true,
-      reason: "up-to-date",
-      slug: row.slug,
+      skipped: false,
+      slug: result.slug,
+      dimensions: result.dimensions,
+      source: result.visionSource,
+      persisted: true,
     });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: `No se pudo guardar vision_embedding: ${formatPgError(error)}`,
+      },
+      { status: 500 }
+    );
   }
-
-  const vectorLiteral = formatVectorForPg(parsed.normalized);
-
-  await connection.query(
-    `
-    UPDATE signipedia_symbols
-    SET
-      vision_embedding = $1::vector,
-      vision_embedding_source = $2,
-      updated_at = NOW()
-    WHERE id = $3
-    `,
-    [vectorLiteral, imageUrl, symbolId]
-  );
-
-  return NextResponse.json({
-    ok: true,
-    skipped: false,
-    slug: row.slug,
-    dimensions: VISION_EMBEDDING_DIMENSIONS,
-    source: imageUrl,
-  });
 }

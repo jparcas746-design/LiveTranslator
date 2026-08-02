@@ -2,30 +2,12 @@
 
 import { useMemo, useRef, useState } from "react";
 import { CLIP_VISION_MODEL_ID } from "@/thor/signipedia/recognition/clipConfig";
-
-type ClipRuntime = {
-  modelId: string;
-  processor: {
-    (input: unknown): Promise<Record<string, unknown>>;
-  };
-  model: {
-    (inputs: Record<string, unknown>): Promise<Record<string, unknown>>;
-  };
-  RawImage: {
-    fromBlob: (blob: Blob) => Promise<unknown>;
-  };
-};
-
-type EmbeddingReport = {
-  dims: number[];
-  length: number;
-  preview: number[];
-};
+import { generateClipImageEmbedding, isClipRuntimeLoaded, loadClipVisionRuntime, type ClipEmbeddingReport } from "@/lib/clipVisionClient";
 
 const DEFAULT_MODEL_ID = CLIP_VISION_MODEL_ID;
 
 export default function VisionTestPage() {
-  const runtimeRef = useRef<ClipRuntime | null>(null);
+  const runtimeRef = useRef<{ modelId: string } | null>(null);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -35,10 +17,10 @@ export default function VisionTestPage() {
   const [modelLoaded, setModelLoaded] = useState(false);
   const [modelStatus, setModelStatus] = useState("Modelo no cargado.");
   const [embeddingStatus, setEmbeddingStatus] = useState("Sin embedding generado.");
-  const [embeddingReport, setEmbeddingReport] = useState<EmbeddingReport | null>(null);
+  const [embeddingReport, setEmbeddingReport] = useState<ClipEmbeddingReport | null>(null);
 
   const canGenerateEmbedding = useMemo(() => {
-    return Boolean(runtimeRef.current && selectedImage && !generatingEmbedding);
+    return Boolean((runtimeRef.current || isClipRuntimeLoaded()) && selectedImage && !generatingEmbedding);
   }, [selectedImage, generatingEmbedding]);
 
   function updateImage(file: File | null) {
@@ -59,9 +41,9 @@ export default function VisionTestPage() {
   }
 
   async function loadClipModel() {
-    if (runtimeRef.current) {
+    if (runtimeRef.current || isClipRuntimeLoaded()) {
       setModelLoaded(true);
-      setModelStatus(`Modelo ya cargado: ${runtimeRef.current.modelId}`);
+      setModelStatus(`Modelo ya cargado: ${DEFAULT_MODEL_ID}`);
       return;
     }
 
@@ -69,21 +51,8 @@ export default function VisionTestPage() {
     setModelStatus("Cargando Transformers.js y modelo CLIP...");
 
     try {
-      const transformers = await import("@huggingface/transformers");
-      const { env, AutoProcessor, CLIPVisionModelWithProjection, RawImage } = transformers;
-
-      env.allowLocalModels = false;
-      env.useBrowserCache = true;
-
-      const processor = await AutoProcessor.from_pretrained(DEFAULT_MODEL_ID);
-      const model = await CLIPVisionModelWithProjection.from_pretrained(DEFAULT_MODEL_ID);
-
-      runtimeRef.current = {
-        modelId: DEFAULT_MODEL_ID,
-        processor: processor as ClipRuntime["processor"],
-        model: model as ClipRuntime["model"],
-        RawImage: RawImage as ClipRuntime["RawImage"],
-      };
+      const runtime = await loadClipVisionRuntime();
+      runtimeRef.current = { modelId: runtime.modelId };
 
       setModelLoaded(true);
       setModelStatus(`Modelo cargado correctamente: ${DEFAULT_MODEL_ID}`);
@@ -98,7 +67,7 @@ export default function VisionTestPage() {
   }
 
   async function generateEmbedding() {
-    if (!runtimeRef.current || !selectedImage) {
+    if (!(runtimeRef.current || isClipRuntimeLoaded()) || !selectedImage) {
       return;
     }
 
@@ -107,25 +76,7 @@ export default function VisionTestPage() {
     setEmbeddingStatus("Generando embedding de imagen...");
 
     try {
-      const rawImage = await runtimeRef.current.RawImage.fromBlob(selectedImage);
-      const processed = await runtimeRef.current.processor(rawImage);
-      const output = await runtimeRef.current.model(processed);
-
-      const embeddingTensor = output.image_embeds as
-        | { data?: Float32Array | number[]; dims?: number[] }
-        | undefined;
-
-      if (!embeddingTensor?.data) {
-        throw new Error("La salida no contiene image_embeds.");
-      }
-
-      const embeddingData = Array.from(embeddingTensor.data);
-      const report: EmbeddingReport = {
-        dims: Array.isArray(embeddingTensor.dims) ? embeddingTensor.dims : [embeddingData.length],
-        length: embeddingData.length,
-        preview: embeddingData.slice(0, 12).map((value) => Number(value.toFixed(6))),
-      };
-
+      const report = await generateClipImageEmbedding(selectedImage);
       setEmbeddingReport(report);
       setEmbeddingStatus("Embedding generado correctamente.");
     } catch (error) {
