@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { Pool } from "pg";
 import { del, put } from "@vercel/blob";
 
 type SaveKnowledgeSourceInput = {
@@ -32,8 +33,60 @@ export function createStorageNotConfiguredError(): StorageCapabilityError {
   return {
     code: "KNOWLEDGE_STORAGE_NOT_CONFIGURED",
     message:
-      "Knowledge source storage is not configured. Set BLOB_READ_WRITE_TOKEN (Vercel) or THOR_KNOWLEDGE_STORAGE_DIR (persistent volume path).",
+      "Knowledge source storage is not configured. Set DATABASE_URL to a valid PostgreSQL connection string.",
   };
+}
+
+let sourcePool: Pool | null = null;
+let sourceSchemaReadyPromise: Promise<void> | null = null;
+
+function resolveConnectionString() {
+  return process.env.DATABASE_URL?.trim() || null;
+}
+
+function getSourcePool() {
+  if (sourcePool) {
+    return sourcePool;
+  }
+
+  const connectionString = resolveConnectionString();
+
+  if (!connectionString) {
+    return null;
+  }
+
+  sourcePool = new Pool({ connectionString });
+  return sourcePool;
+}
+
+async function ensureSourceSchema(connection: Pool) {
+  if (!sourceSchemaReadyPromise) {
+    sourceSchemaReadyPromise = connection
+      .query(
+        `
+        CREATE TABLE IF NOT EXISTS thor_knowledge_sources (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          storage_key TEXT NOT NULL UNIQUE,
+          file_name TEXT NOT NULL,
+          source_type TEXT NOT NULL,
+          category TEXT NOT NULL,
+          file_bytes BYTEA NOT NULL,
+          metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_thor_knowledge_sources_storage_key
+          ON thor_knowledge_sources(storage_key);
+        `
+      )
+      .then(() => undefined)
+      .catch((error) => {
+        sourceSchemaReadyPromise = null;
+        throw error;
+      });
+  }
+
+  await sourceSchemaReadyPromise;
 }
 
 function sanitizeSegment(value: string) {
@@ -133,6 +186,79 @@ export const localPersistentKnowledgeStorage: KnowledgeSourceStorage = {
   },
 };
 
+export const postgresKnowledgeSourceStorage: KnowledgeSourceStorage = {
+  isConfigured() {
+    return Boolean(getSourcePool());
+  },
+
+  async saveSource(input) {
+    const connection = getSourcePool();
+    if (!connection) {
+      throw createStorageNotConfiguredError();
+    }
+
+    await ensureSourceSchema(connection);
+
+    const category = sanitizeSegment(input.category || "general");
+    const safeFileName = sanitizeFileName(input.fileName);
+    const storageKey = `pg/${category}/${randomUUID()}-${safeFileName}`;
+
+    await connection.query(
+      `
+      INSERT INTO thor_knowledge_sources
+        (storage_key, file_name, source_type, category, file_bytes, metadata)
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+      `,
+      [
+        storageKey,
+        input.fileName,
+        input.sourceType,
+        input.category || "general",
+        input.fileBuffer,
+        JSON.stringify({ uploadedAt: input.uploadedAt }),
+      ]
+    );
+
+    return {
+      filePath: `pg:${storageKey}`,
+      fileSizeBytes: input.fileBuffer.byteLength,
+    };
+  },
+
+  async readSource(filePathValue) {
+    const connection = getSourcePool();
+    if (!connection) {
+      throw createStorageNotConfiguredError();
+    }
+
+    await ensureSourceSchema(connection);
+
+    const storageKey = filePathValue.startsWith("pg:") ? filePathValue.slice(3) : filePathValue;
+    const result = await connection.query<{ file_bytes: Buffer }>(
+      `SELECT file_bytes FROM thor_knowledge_sources WHERE storage_key = $1 LIMIT 1`,
+      [storageKey]
+    );
+
+    if (!result.rows[0]) {
+      throw new Error("Document source file not found in PostgreSQL storage");
+    }
+
+    return result.rows[0].file_bytes;
+  },
+
+  async deleteSource(filePathValue) {
+    const connection = getSourcePool();
+    if (!connection) {
+      throw createStorageNotConfiguredError();
+    }
+
+    await ensureSourceSchema(connection);
+
+    const storageKey = filePathValue.startsWith("pg:") ? filePathValue.slice(3) : filePathValue;
+    await connection.query(`DELETE FROM thor_knowledge_sources WHERE storage_key = $1`, [storageKey]);
+  },
+};
+
 export const vercelBlobKnowledgeStorage: KnowledgeSourceStorage = {
   isConfigured() {
     return Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());
@@ -177,6 +303,10 @@ export const vercelBlobKnowledgeStorage: KnowledgeSourceStorage = {
 };
 
 export function resolveKnowledgeSourceStorage() {
+  if (postgresKnowledgeSourceStorage.isConfigured()) {
+    return postgresKnowledgeSourceStorage;
+  }
+
   if (vercelBlobKnowledgeStorage.isConfigured()) {
     return vercelBlobKnowledgeStorage;
   }

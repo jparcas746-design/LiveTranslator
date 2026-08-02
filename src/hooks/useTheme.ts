@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 export type ThemeMode = "light" | "dark";
 
-const STORAGE_KEY = "thorai-theme";
+const STORAGE_KEY = "signipedia-theme";
 
 function resolveInitialTheme(): ThemeMode {
   if (typeof window === "undefined") {

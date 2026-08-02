@@ -1,4 +1,6 @@
 // PostgreSQL + pgvector repository implementation for production knowledge storage.
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { Pool, type PoolClient } from "pg";
 import type {
   IndexStatus,
@@ -14,16 +16,13 @@ import {
   type ListKnowledgeDocumentsQuery,
 } from "@/thor/knowledge/database/repository";
 import { thorLogger } from "@/thor/utils/logger";
+import { resolveRequiredPostgresConnectionString } from "@/thor/utils/postgresConnection";
 
 let pool: Pool | null = null;
+let schemaReadyPromise: Promise<void> | null = null;
 
 function resolveConnectionString() {
-  return (
-    process.env.THOR_KNOWLEDGE_DB_DSN?.trim() ||
-    process.env.POSTGRES_URL?.trim() ||
-    process.env.DATABASE_URL?.trim() ||
-    null
-  );
+  return resolveRequiredPostgresConnectionString({ label: "Knowledge Engine" });
 }
 
 function getPool() {
@@ -32,9 +31,6 @@ function getPool() {
   }
 
   const connectionString = resolveConnectionString();
-  if (!connectionString) {
-    return null;
-  }
 
   pool = new Pool({ connectionString });
   return pool;
@@ -46,6 +42,40 @@ function requirePool() {
     throw createRepositoryNotConfiguredError();
   }
   return resolvedPool;
+}
+
+async function loadSchemaSql() {
+  const schemaPath = path.resolve(
+    process.cwd(),
+    "src",
+    "thor",
+    "knowledge",
+    "database",
+    "sql",
+    "schema.sql"
+  );
+
+  return fs.readFile(schemaPath, "utf8");
+}
+
+async function ensureSchemaReady(connection: Pool) {
+  if (!schemaReadyPromise) {
+    schemaReadyPromise = (async () => {
+      const schemaSql = await loadSchemaSql();
+      await connection.query(schemaSql);
+    })().catch((error) => {
+      schemaReadyPromise = null;
+      throw error;
+    });
+  }
+
+  await schemaReadyPromise;
+}
+
+async function requireReadyPool() {
+  const connection = requirePool();
+  await ensureSchemaReady(connection);
+  return connection;
 }
 
 function vectorLiteral(values: number[]) {
@@ -87,7 +117,7 @@ function sanitizeOffset(value: number | undefined) {
 }
 
 async function withTransaction<T>(task: (client: PoolClient) => Promise<T>) {
-  const connection = requirePool();
+  const connection = await requireReadyPool();
   const client = await connection.connect();
 
   try {
@@ -105,7 +135,7 @@ async function withTransaction<T>(task: (client: PoolClient) => Promise<T>) {
 
 export const postgresKnowledgeRepository: KnowledgeRepository = {
   isConfigured() {
-    return Boolean(getPool());
+    return Boolean(process.env.DATABASE_URL?.trim());
   },
 
   async listDocuments(query?: ListKnowledgeDocumentsQuery) {
@@ -115,7 +145,7 @@ export const postgresKnowledgeRepository: KnowledgeRepository = {
     const status = query?.status || null;
     const search = query?.search?.trim() || null;
 
-    const connection = requirePool();
+    const connection = await requireReadyPool();
     const result = await connection.query(
       `
       SELECT id, name, category, source_type, status, chunk_count, file_size_bytes, file_path, uploaded_at, indexed_at, created_at, updated_at, metadata
@@ -134,7 +164,7 @@ export const postgresKnowledgeRepository: KnowledgeRepository = {
   },
 
   async createDocument(input: CreateKnowledgeDocumentInput) {
-    const connection = requirePool();
+    const connection = await requireReadyPool();
     const result = await connection.query(
       `
       INSERT INTO thor_knowledge_documents
@@ -157,7 +187,7 @@ export const postgresKnowledgeRepository: KnowledgeRepository = {
   },
 
   async updateDocumentCategory(documentId: string, category: string) {
-    const connection = requirePool();
+    const connection = await requireReadyPool();
     const result = await connection.query(
       `
       UPDATE thor_knowledge_documents
@@ -177,7 +207,7 @@ export const postgresKnowledgeRepository: KnowledgeRepository = {
   },
 
   async updateDocumentStatus(documentId: string, status: IndexStatus, errorMessage?: string | null) {
-    const connection = requirePool();
+    const connection = await requireReadyPool();
     await connection.query(
       `
       UPDATE thor_knowledge_documents
@@ -228,7 +258,7 @@ export const postgresKnowledgeRepository: KnowledgeRepository = {
   },
 
   async searchByVector(vector: number[], query: SearchQuery) {
-    const connection = requirePool();
+    const connection = await requireReadyPool();
     const result = await connection.query(
       `
       SELECT
@@ -277,7 +307,7 @@ export const postgresKnowledgeRepository: KnowledgeRepository = {
   },
 
   async getDocumentById(documentId: string) {
-    const connection = requirePool();
+    const connection = await requireReadyPool();
     const result = await connection.query(
       `
       SELECT id, name, category, source_type, status, chunk_count, file_size_bytes, file_path, uploaded_at, indexed_at, created_at, updated_at, metadata
@@ -295,7 +325,7 @@ export const postgresKnowledgeRepository: KnowledgeRepository = {
   },
 
   async deleteDocument(documentId: string) {
-    const connection = requirePool();
+    const connection = await requireReadyPool();
 
     await withTransaction(async (client) => {
       await client.query(`DELETE FROM thor_knowledge_chunks WHERE document_id = $1`, [documentId]);

@@ -1,56 +1,56 @@
 :root {
-  --font-sans: var(--font-manrope), "Inter Tight", "Segoe UI", sans-serif;
-  --font-display: var(--font-space-grotesk), "Sora", "Segoe UI", sans-serif;
+  --font-sans: var(--font-manrope), "Segoe UI", sans-serif;
+  --font-display: var(--font-cormorant-garamond), Georgia, serif;
 
-  --bg: #f3f5fa;
-  --bg-elev: #ffffff;
-  --bg-soft: #eef2f8;
-  --bg-muted: #e4e9f4;
-  --text: #101624;
-  --text-muted: #4f5c74;
-  --text-soft: #7a86a0;
+  --bg: #f4efe7;
+  --bg-elev: #fffaf2;
+  --bg-soft: #efe4cf;
+  --bg-muted: #e4d5b6;
+  --text: #17120d;
+  --text-muted: #604c34;
+  --text-soft: #8c7659;
 
-  --line: #d8dfec;
-  --line-strong: #c7d2e5;
+  --line: #d8c5a1;
+  --line-strong: #c0a77c;
 
-  --brand: #0f62fe;
-  --brand-2: #06b6d4;
-  --brand-soft: rgba(15, 98, 254, 0.12);
-  --ok: #0ea66c;
-  --warn: #f59e0b;
-  --danger: #ef4444;
+  --brand: #9b452c;
+  --brand-2: #1f6d8c;
+  --brand-soft: rgba(155, 69, 44, 0.13);
+  --ok: #0e8f63;
+  --warn: #bf7d16;
+  --danger: #bf3b3b;
 
   --radius-xs: 10px;
   --radius-sm: 14px;
   --radius-md: 18px;
-  --radius-lg: 24px;
+  --radius-lg: 28px;
 
-  --shadow-xs: 0 8px 20px -16px rgba(16, 22, 36, 0.35);
-  --shadow-md: 0 20px 48px -28px rgba(16, 22, 36, 0.35);
-  --shadow-lg: 0 28px 68px -34px rgba(16, 22, 36, 0.45);
+  --shadow-xs: 0 8px 20px -16px rgba(36, 24, 14, 0.3);
+  --shadow-md: 0 20px 48px -28px rgba(36, 24, 14, 0.35);
+  --shadow-lg: 0 28px 68px -34px rgba(36, 24, 14, 0.45);
 
   --ease-swift: 170ms cubic-bezier(0.2, 0.75, 0.3, 1);
   --ease-smooth: 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 :root[data-theme="dark"] {
-  --bg: #060b16;
-  --bg-elev: #0f1727;
-  --bg-soft: #131f33;
-  --bg-muted: #1a2740;
-  --text: #f7f9ff;
-  --text-muted: #ccd7ed;
-  --text-soft: #91a3c8;
+  --bg: #120f0b;
+  --bg-elev: #1a1611;
+  --bg-soft: #241d15;
+  --bg-muted: #302518;
+  --text: #fbf4ea;
+  --text-muted: #e4d2b7;
+  --text-soft: #c4a885;
 
-  --line: #25344f;
-  --line-strong: #344769;
+  --line: #4d3a25;
+  --line-strong: #685034;
 
-  --brand: #5aa2ff;
-  --brand-2: #22d3ee;
-  --brand-soft: rgba(90, 162, 255, 0.14);
-  --ok: #22c55e;
+  --brand: #f08a52;
+  --brand-2: #6bc6db;
+  --brand-soft: rgba(240, 138, 82, 0.14);
+  --ok: #34d399;
   --warn: #fbbf24;
-  --danger: #f87171;
+  --danger: #fb7185;
 
   --shadow-xs: 0 10px 22px -16px rgba(0, 0, 0, 0.7);
   --shadow-md: 0 28px 54px -30px rgba(0, 0, 0, 0.68);
@@ -71,10 +71,15 @@ body {
   font-family: var(--font-sans);
   color: var(--text);
   background:
-    radial-gradient(circle at 4% 10%, rgba(34, 211, 238, 0.16), transparent 30%),
-    radial-gradient(circle at 94% 84%, rgba(15, 98, 254, 0.16), transparent 28%),
-    linear-gradient(160deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 76%, #0b1220) 100%);
+    radial-gradient(circle at 6% 8%, rgba(155, 69, 44, 0.16), transparent 28%),
+    radial-gradient(circle at 92% 88%, rgba(31, 109, 140, 0.14), transparent 26%),
+    linear-gradient(160deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 82%, #f1ddbd) 100%);
   transition: color var(--ease-smooth), background var(--ease-smooth);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
 }
 
 button,
@@ -661,6 +666,580 @@ textarea:focus-visible {
   background: color-mix(in srgb, var(--danger) 18%, transparent);
 }
 
+.signipedia-shell {
+  width: min(1480px, calc(100% - 32px));
+  margin: 16px auto 28px;
+  display: grid;
+  gap: 20px;
+}
+
+.signipedia-hero,
+.signipedia-panel,
+.signipedia-feature-card,
+.signipedia-card,
+.signipedia-hero-panel,
+.signipedia-detail-hero,
+.signipedia-detail-section,
+.signipedia-related-card {
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 92%, transparent);
+  box-shadow: var(--shadow-md);
+}
+
+.signipedia-hero {
+  border-radius: 32px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+  gap: 20px;
+  padding: 28px;
+  overflow: hidden;
+  position: relative;
+}
+
+.signipedia-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--brand-soft) 72%, transparent), transparent 32%),
+    radial-gradient(circle at 86% 18%, rgba(31, 109, 140, 0.12), transparent 24%);
+  pointer-events: none;
+}
+
+.signipedia-hero > * {
+  position: relative;
+}
+
+.signipedia-hero-copy {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.signipedia-badge,
+.signipedia-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 0.74rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand-soft) 72%, transparent);
+}
+
+.signipedia-hero h1,
+.signipedia-detail-hero h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 7vw, 5.5rem);
+  line-height: 0.92;
+  letter-spacing: -0.04em;
+}
+
+.signipedia-lead,
+.signipedia-detail-hero p,
+.signipedia-panel p,
+.signipedia-card p,
+.signipedia-feature-card p,
+.signipedia-detail-section p,
+.signipedia-detail-section li {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+
+.signipedia-searchbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-elev) 96%, transparent);
+  padding: 12px 14px;
+}
+
+.signipedia-searchbar input,
+.signipedia-advanced-filters select {
+  border: 0;
+  outline: none;
+  background: transparent;
+  min-width: 0;
+}
+
+.signipedia-searchbar input {
+  font-size: 1rem;
+}
+
+.signipedia-clear,
+.signipedia-text-button,
+.signipedia-chip,
+.signipedia-icon-button,
+.signipedia-back-link {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elev) 94%, transparent);
+  color: var(--text);
+  transition: transform var(--ease-swift), border-color var(--ease-swift), background var(--ease-swift);
+}
+
+.signipedia-clear,
+.signipedia-text-button,
+.signipedia-chip,
+.signipedia-icon-button {
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.signipedia-clear,
+.signipedia-text-button {
+  padding: 8px 12px;
+  font-size: 0.86rem;
+}
+
+.signipedia-clear:hover,
+.signipedia-text-button:hover,
+.signipedia-chip:hover,
+.signipedia-icon-button:hover,
+.signipedia-back-link:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--brand) 34%, var(--line));
+}
+
+.signipedia-hero-actions,
+.signipedia-hero-panel-actions,
+.signipedia-card-actions,
+.signipedia-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.signipedia-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.signipedia-stats article,
+.signipedia-hero-panel,
+.signipedia-panel,
+.signipedia-feature-card,
+.signipedia-card,
+.signipedia-detail-section,
+.signipedia-related-card {
+  border-radius: 24px;
+}
+
+.signipedia-stats article {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-soft) 52%, transparent);
+  padding: 14px;
+  display: grid;
+  gap: 4px;
+}
+
+.signipedia-stats strong {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+}
+
+.signipedia-stats span,
+.signipedia-inline-meta,
+.signipedia-inline-related,
+.signipedia-filter-help,
+.signipedia-mini-note,
+.signipedia-favorite-item small {
+  color: var(--text-soft);
+  font-size: 0.88rem;
+}
+
+.signipedia-hero-panel {
+  padding: 22px;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.signipedia-hero-panel-head,
+.signipedia-section-head,
+.signipedia-card-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+}
+
+.signipedia-hero-panel h2,
+.signipedia-section-head h2,
+.signipedia-panel h2,
+.signipedia-detail-section h2,
+.signipedia-card h3,
+.signipedia-feature-card h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+.signipedia-glyph,
+.signipedia-card-glyph,
+.signipedia-detail-glyph {
+  display: grid;
+  place-items: center;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-soft) 72%, transparent), color-mix(in srgb, var(--bg-elev) 98%, transparent));
+  color: var(--brand);
+}
+
+.signipedia-glyph {
+  width: 100%;
+  aspect-ratio: 1 / 0.72;
+  font-size: clamp(4rem, 8vw, 7rem);
+}
+
+.signipedia-card-glyph {
+  width: 100%;
+  aspect-ratio: 1 / 0.62;
+  font-size: 3.2rem;
+}
+
+.signipedia-detail-glyph {
+  min-width: 190px;
+  min-height: 190px;
+  font-size: clamp(4rem, 10vw, 8rem);
+}
+
+.signipedia-glyph-math,
+.signipedia-glyph-astronomy {
+  color: #c56b23;
+}
+
+.signipedia-glyph-chemistry,
+.signipedia-glyph-biology {
+  color: #15736c;
+}
+
+.signipedia-glyph-religion,
+.signipedia-glyph-heraldry,
+.signipedia-glyph-runes {
+  color: #7d4c2b;
+}
+
+.signipedia-glyph-currency,
+.signipedia-glyph-computing,
+.signipedia-glyph-traffic,
+.signipedia-glyph-alchemy {
+  color: #9b452c;
+}
+
+.signipedia-inline-meta,
+.signipedia-inline-related {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.signipedia-inline-meta span,
+.signipedia-inline-related a {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 11px;
+  background: color-mix(in srgb, var(--bg-soft) 42%, transparent);
+}
+
+.signipedia-filter-rail,
+.signipedia-grid-layout,
+.signipedia-feature-strip {
+  display: grid;
+  gap: 18px;
+}
+
+.signipedia-filter-rail {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+}
+
+.signipedia-filter-group,
+.signipedia-advanced-filters {
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--bg-elev) 94%, transparent);
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.signipedia-section-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.signipedia-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.signipedia-chip {
+  padding: 9px 12px;
+  font-size: 0.85rem;
+}
+
+.signipedia-chip.is-active {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand-soft) 68%, transparent);
+}
+
+.signipedia-grid-layout {
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+  align-items: start;
+}
+
+.signipedia-main-column,
+.signipedia-side-column {
+  display: grid;
+  gap: 18px;
+}
+
+.signipedia-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.signipedia-card,
+.signipedia-feature-card {
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.signipedia-card h3,
+.signipedia-feature-card h3 {
+  font-size: 1.35rem;
+}
+
+.signipedia-card-meta {
+  display: grid;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.signipedia-panel {
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.signipedia-panel-soft {
+  background: color-mix(in srgb, var(--brand-soft) 28%, var(--bg-elev));
+}
+
+.signipedia-favorite-list {
+  display: grid;
+  gap: 10px;
+}
+
+.signipedia-favorite-item,
+.signipedia-related-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--bg-soft) 38%, transparent);
+}
+
+.signipedia-favorite-item span,
+.signipedia-related-card strong {
+  font-size: 1.2rem;
+  font-family: var(--font-display);
+}
+
+.signipedia-favorite-item div,
+.signipedia-related-card {
+  display: grid;
+  gap: 2px;
+}
+
+.signipedia-timeline {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 10px;
+  color: var(--text-muted);
+}
+
+.signipedia-feature-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.signipedia-mini-note {
+  align-self: center;
+}
+
+.signipedia-detail-shell {
+  width: min(1160px, calc(100% - 32px));
+  margin: 20px auto 32px;
+  display: grid;
+  gap: 20px;
+}
+
+.signipedia-detail-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.signipedia-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+}
+
+.signipedia-detail-hero {
+  border-radius: 30px;
+  padding: 24px;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.signipedia-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.signipedia-detail-section {
+  padding: 20px;
+}
+
+.signipedia-detail-section ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  color: var(--text-muted);
+}
+
+.signipedia-related-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.signipedia-related-card {
+  border-radius: 20px;
+}
+
+.signipedia-related-card small {
+  color: var(--text-soft);
+}
+
+.signipedia-muted {
+  color: var(--text-soft);
+  line-height: 1.6;
+}
+
+.signipedia-icon-button {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+}
+
+.signipedia-filter-help {
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.signipedia-advanced-filters label {
+  display: grid;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 0.88rem;
+}
+
+.signipedia-advanced-filters select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--bg-elev) 94%, transparent);
+}
+
+@media (max-width: 1180px) {
+  .signipedia-hero,
+  .signipedia-grid-layout,
+  .signipedia-filter-rail,
+  .signipedia-feature-strip,
+  .signipedia-detail-grid,
+  .signipedia-related-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .signipedia-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .signipedia-detail-hero {
+    flex-direction: column;
+    align-items: start;
+  }
+}
+
+@media (max-width: 720px) {
+  .signipedia-shell,
+  .signipedia-detail-shell {
+    width: calc(100% - 16px);
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .signipedia-hero,
+  .signipedia-detail-hero,
+  .signipedia-panel,
+  .signipedia-filter-group,
+  .signipedia-advanced-filters,
+  .signipedia-card,
+  .signipedia-feature-card,
+  .signipedia-detail-section,
+  .signipedia-hero-panel {
+    padding: 16px;
+  }
+
+  .signipedia-hero h1,
+  .signipedia-detail-hero h1 {
+    font-size: 2.8rem;
+  }
+
+  .signipedia-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .signipedia-searchbar {
+    grid-template-columns: 1fr;
+  }
+
+  .signipedia-detail-nav {
+    flex-direction: column;
+    align-items: start;
+  }
+}
+
 .icon-btn {
   width: 32px;
   height: 32px;
@@ -881,7 +1460,7 @@ textarea:focus-visible {
   }
 }
 
-/* ThorAI Hybrid v2 visual refresh */
+/* Signipedia visual refresh */
 :root {
   --bg: #f4efe4;
   --bg-elev: #fffaf0;

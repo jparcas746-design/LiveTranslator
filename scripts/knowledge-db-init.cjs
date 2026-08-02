@@ -1,21 +1,15 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { Client } = require("pg");
-
-function resolveConnectionString() {
-  return (
-    process.env.THOR_KNOWLEDGE_DB_DSN?.trim() ||
-    process.env.POSTGRES_URL?.trim() ||
-    process.env.DATABASE_URL?.trim() ||
-    null
-  );
-}
+const { loadEnvLocal, resolveKnowledgeDbConnectionString } = require("./knowledge-env.cjs");
 
 async function main() {
-  const connectionString = resolveConnectionString();
+  loadEnvLocal();
+
+  const connectionString = resolveKnowledgeDbConnectionString();
   if (!connectionString) {
     console.error("[knowledge-db-init] Missing database connection string.");
-    console.error("Set one of: THOR_KNOWLEDGE_DB_DSN, POSTGRES_URL, DATABASE_URL.");
+    console.error("Set one of: THOR_KNOWLEDGE_DB_DSN, POSTGRES_URL, POSTGRES_PRISMA_URL, DATABASE_URL.");
     process.exit(1);
   }
 

@@ -5,194 +5,195 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   BookOpenText,
-  CircleCheck,
-  FileSearch,
-  FileText,
-  FileType,
+  Check,
   FileUp,
+  ImagePlus,
   Loader2,
   Lock,
+  Plus,
   RefreshCw,
   Search,
   Shield,
   Trash2,
-  UploadCloud,
+  Upload,
 } from "lucide-react";
 import { fetchJson } from "@/lib/fetchJson";
+import { Button } from "@/components/ui/Button";
 
-type AdminDocument = {
+type AdminCategory = {
   id: string;
+  slug: string;
   name: string;
-  category: string;
-  status: "queued" | "indexing" | "ready" | "failed";
-  fileSizeBytes: number;
-  filePath: string;
-  uploadedAt: string;
-  indexedAt: string | null;
-  chunkCount: number;
+  description: string;
+  icon: string | null;
+  parentId: string | null;
+  orderIndex: number;
   createdAt: string;
+  updatedAt: string;
 };
 
-type DocumentStatusFilter = "all" | AdminDocument["status"];
-
-type SearchChunk = {
+type AdminSymbolHit = {
   score: number;
-  chunk: {
+  symbol: {
     id: string;
-    content: string;
-    pageNumber: number | null;
-  };
-  document: {
-    id: string;
+    slug: string;
     name: string;
-    category: string;
+    meaning: string;
+    history: string;
+    origin: string;
+    currentUses: string;
+    categoryId: string;
+    status: "draft" | "review" | "published" | "archived";
+    isFeatured: boolean;
+    description: string;
+    canonicalGlyph: string;
+    language: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  category: AdminCategory | null;
+  aliases: string[];
+  tags: string[];
+};
+
+type AdminSummaryResponse = {
+  summary: {
+    categories: number;
+    symbols: number;
+    seededCategories: number;
+    seededSymbols: number;
+  };
+  items: {
+    categories: AdminCategory[];
+    symbols: AdminSymbolHit[];
   };
 };
 
-type UploadKind = "pdf" | "word" | "text";
+type SymbolFormState = {
+  slug: string;
+  name: string;
+  canonicalGlyph: string;
+  meaning: string;
+  history: string;
+  origin: string;
+  currentUses: string;
+  description: string;
+  categoryId: string;
+  language: string;
+  status: "draft" | "review" | "published" | "archived";
+  isFeatured: boolean;
+  aliasesText: string;
+  tagsText: string;
+  relatedText: string;
+  periodsJson: string;
+  sourcesJson: string;
+  mediaLines: string;
+  translationsJson: string;
+};
 
-function formatDate(value: string | null) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString();
+type CategoryFormState = {
+  slug: string;
+  name: string;
+  description: string;
+  icon: string;
+  parentId: string;
+  orderIndex: string;
+};
+
+const EMPTY_SYMBOL_FORM: SymbolFormState = {
+  slug: "",
+  name: "",
+  canonicalGlyph: "",
+  meaning: "",
+  history: "",
+  origin: "",
+  currentUses: "",
+  description: "",
+  categoryId: "",
+  language: "es",
+  status: "draft",
+  isFeatured: false,
+  aliasesText: "",
+  tagsText: "",
+  relatedText: "",
+  periodsJson: "[]",
+  sourcesJson: "[]",
+  mediaLines: "",
+  translationsJson: "[]",
+};
+
+const EMPTY_CATEGORY_FORM: CategoryFormState = {
+  slug: "",
+  name: "",
+  description: "",
+  icon: "",
+  parentId: "",
+  orderIndex: "0",
+};
+
+function splitLines(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
-function formatFileSize(bytes: number) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
+function safeJsonArray<T>(value: string, fallback: T[] = []): T[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? (parsed as T[]) : fallback;
+  } catch {
+    return fallback;
   }
-  const rounded = unit === 0 ? Math.round(value) : Math.round(value * 10) / 10;
-  return `${rounded} ${units[unit]}`;
 }
 
-function fileAcceptByKind(kind: UploadKind) {
-  if (kind === "pdf") return ".pdf,application/pdf";
-  if (kind === "word") return ".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  return ".txt,text/plain";
-}
-
-function getStatusClasses(status: AdminDocument["status"]) {
-  if (status === "ready") {
-    return "bg-emerald-500/20 text-emerald-200 border border-emerald-400/30";
-  }
-  if (status === "failed") {
-    return "bg-rose-500/20 text-rose-200 border border-rose-400/30";
-  }
-  if (status === "indexing") {
-    return "bg-amber-500/20 text-amber-200 border border-amber-400/30";
-  }
-  return "bg-slate-500/20 text-slate-200 border border-slate-400/30";
-}
-
-function uploadWithProgress(
-  url: string,
-  formData: FormData,
-  onProgress: (percent: number) => void
-): Promise<{
-  ok: boolean;
-  status: number;
-  data?: unknown;
-  error?: string;
-  details?: { contentType: string; preview: string };
-}> {
-  return new Promise((resolve) => {
-    const xhr = new XMLHttpRequest();
-
-    xhr.upload.addEventListener("progress", (event) => {
-      if (!event.lengthComputable) return;
-      const percent = Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100)));
-      onProgress(percent);
-    });
-
-    xhr.addEventListener("load", () => {
-      const contentType = xhr.getResponseHeader("content-type") || "";
-      const bodyText = xhr.responseText || "";
-
-      console.log("ADMIN_UPLOAD_RESPONSE", {
-        url,
-        status: xhr.status,
-        contentType,
-        preview: bodyText.replace(/\s+/g, " ").slice(0, 240),
-      });
-
-      if (!contentType.toLowerCase().includes("application/json")) {
-        resolve({
-          ok: false,
-          status: xhr.status,
-          error: `Expected JSON but received '${contentType || "unknown"}'`,
-          details: {
-            contentType,
-            preview: bodyText.replace(/\s+/g, " ").slice(0, 240),
-          },
-        });
-        return;
-      }
-
-      try {
-        const parsed = bodyText ? JSON.parse(bodyText) : {};
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve({ ok: true, status: xhr.status, data: parsed });
-        } else {
-          const message =
-            typeof parsed?.error === "string"
-              ? parsed.error
-              : parsed?.error?.message || `Upload failed with status ${xhr.status}`;
-          resolve({ ok: false, status: xhr.status, error: message });
-        }
-      } catch {
-        resolve({
-          ok: false,
-          status: xhr.status,
-          error: "Invalid JSON response from server",
-          details: {
-            contentType,
-            preview: bodyText.replace(/\s+/g, " ").slice(0, 240),
-          },
-        });
-      }
-    });
-
-    xhr.addEventListener("error", () => {
-      resolve({ ok: false, status: 0, error: "Network error during upload" });
-    });
-
-    xhr.open("POST", url);
-    xhr.withCredentials = true;
-    xhr.send(formData);
-  });
-}
-
-export default function AdminKnowledgePage() {
+export default function AdminPage() {
   const [authState, setAuthState] = useState<"checking" | "locked" | "authenticated">("checking");
   const [authInput, setAuthInput] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
+  const [status, setStatus] = useState("Ready");
+  const [loading, setLoading] = useState(false);
+  const [summary, setSummary] = useState<AdminSummaryResponse["summary"] | null>(null);
+  const [categories, setCategories] = useState<AdminCategory[]>([]);
+  const [symbols, setSymbols] = useState<AdminSymbolHit[]>([]);
+  const [query, setQuery] = useState("");
+  const [selectedSymbolSlug, setSelectedSymbolSlug] = useState<string | null>(null);
+  const [symbolForm, setSymbolForm] = useState<SymbolFormState>(EMPTY_SYMBOL_FORM);
+  const [categoryForm, setCategoryForm] = useState<CategoryFormState>(EMPTY_CATEGORY_FORM);
+  const [importJson, setImportJson] = useState("{\n  \"categories\": [],\n  \"symbols\": []\n}");
+  const [imageUploadMessage, setImageUploadMessage] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const selectedSymbol = useMemo(
+    () => symbols.find((item) => item.symbol.slug === selectedSymbolSlug) || null,
+    [symbols, selectedSymbolSlug]
+  );
 
-  const [category, setCategory] = useState("general");
-  const [documents, setDocuments] = useState<AdminDocument[]>([]);
-  const [listCategoryFilter, setListCategoryFilter] = useState("");
-  const [listStatusFilter, setListStatusFilter] = useState<DocumentStatusFilter>("all");
-  const [listSearchFilter, setListSearchFilter] = useState("");
-  const [pageLimit, setPageLimit] = useState(50);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchChunk[]>([]);
-  const [statusText, setStatusText] = useState("Ready");
+  const filteredSymbols = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) {
+      return symbols;
+    }
 
-  const [loadingDocs, setLoadingDocs] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [workingDocumentId, setWorkingDocumentId] = useState<string | null>(null);
-  const [pendingDeleteDocument, setPendingDeleteDocument] = useState<AdminDocument | null>(null);
+    return symbols.filter((entry) => {
+      const haystack = [
+        entry.symbol.name,
+        entry.symbol.slug,
+        entry.symbol.meaning,
+        entry.symbol.history,
+        entry.symbol.origin,
+        entry.symbol.currentUses,
+        entry.aliases.join(" "),
+        entry.tags.join(" "),
+        entry.category?.name || "",
+      ]
+        .join(" ")
+        .toLowerCase();
 
-  const uploadInputRef = useRef<HTMLInputElement | null>(null);
-  const [pendingUploadKind, setPendingUploadKind] = useState<UploadKind>("pdf");
+      return haystack.includes(normalized);
+    });
+  }, [query, symbols]);
 
-  const isBusy = loadingDocs || uploading || Boolean(workingDocumentId);
+  const categoryOptions = useMemo(() => categories.slice().sort((left, right) => left.name.localeCompare(right.name, "es")), [categories]);
 
   const checkSession = useCallback(async () => {
     const result = await fetchJson<{ authenticated: boolean }>("/api/admin/session", {
@@ -201,15 +202,11 @@ export default function AdminKnowledgePage() {
       cache: "no-store",
     });
 
-    if (!result.ok) {
-      console.error("ADMIN_SESSION_CHECK_ERROR", result);
+    if (!result.ok || !result.data.authenticated) {
       setAuthState("locked");
-      setAuthError("No se pudo validar la sesión de administrador.");
-      return false;
-    }
-
-    if (!result.data.authenticated) {
-      setAuthState("locked");
+      if (!result.ok) {
+        setAuthError(result.message || "No se pudo validar la sesión.");
+      }
       return false;
     }
 
@@ -217,44 +214,31 @@ export default function AdminKnowledgePage() {
     return true;
   }, []);
 
-  const loadDocuments = useCallback(async () => {
-    setLoadingDocs(true);
-    setStatusText("Cargando documentos...");
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setStatus("Cargando catálogo...");
 
-    const params = new URLSearchParams();
-    params.set("limit", String(pageLimit));
-    if (listCategoryFilter.trim()) {
-      params.set("category", listCategoryFilter.trim());
-    }
-    if (listStatusFilter !== "all") {
-      params.set("status", listStatusFilter);
-    }
-    if (listSearchFilter.trim()) {
-      params.set("search", listSearchFilter.trim());
-    }
-
-    const endpoint = `/api/admin/knowledge/documents?${params.toString()}`;
-
-    const result = await fetchJson<{ documents: AdminDocument[] }>(endpoint, {
+    const result = await fetchJson<AdminSummaryResponse>("/api/admin", {
       method: "GET",
       credentials: "include",
       cache: "no-store",
     });
 
     if (!result.ok) {
-      console.error("ADMIN_DOCUMENTS_LOAD_ERROR", result);
       if (result.status === 401) {
         setAuthState("locked");
       }
-      setStatusText(result.message);
-      setLoadingDocs(false);
+      setStatus(result.message || "No se pudo cargar el catálogo");
+      setLoading(false);
       return;
     }
 
-    setDocuments(result.data.documents || []);
-    setStatusText(`Documentos cargados: ${result.data.documents?.length || 0}`);
-    setLoadingDocs(false);
-  }, [listCategoryFilter, listSearchFilter, listStatusFilter, pageLimit]);
+    setSummary(result.data.summary);
+    setCategories(result.data.items.categories || []);
+    setSymbols(result.data.items.symbols || []);
+    setStatus(`Catálogo cargado: ${result.data.summary.symbols} símbolos`);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -267,32 +251,64 @@ export default function AdminKnowledgePage() {
       return;
     }
 
-    void loadDocuments();
-  }, [authState, loadDocuments]);
+    void loadData();
+  }, [authState, loadData]);
+
+  useEffect(() => {
+    if (selectedSymbol) {
+      setSymbolForm({
+        slug: selectedSymbol.symbol.slug,
+        name: selectedSymbol.symbol.name,
+        canonicalGlyph: selectedSymbol.symbol.canonicalGlyph,
+        meaning: selectedSymbol.symbol.meaning,
+        history: selectedSymbol.symbol.history,
+        origin: selectedSymbol.symbol.origin,
+        currentUses: selectedSymbol.symbol.currentUses,
+        description: selectedSymbol.symbol.description,
+        categoryId: selectedSymbol.symbol.categoryId,
+        language: selectedSymbol.symbol.language,
+        status: selectedSymbol.symbol.status,
+        isFeatured: selectedSymbol.symbol.isFeatured,
+        aliasesText: selectedSymbol.aliases.join("\n"),
+        tagsText: selectedSymbol.tags.join("\n"),
+        relatedText: "",
+        periodsJson: "[]",
+        sourcesJson: "[]",
+        mediaLines: "",
+        translationsJson: "[]",
+      });
+      return;
+    }
+
+    setSymbolForm(EMPTY_SYMBOL_FORM);
+  }, [selectedSymbol]);
+
+  useEffect(() => {
+    if (!symbolForm.categoryId && categoryOptions.length > 0) {
+      setSymbolForm((current) => ({ ...current, categoryId: categoryOptions[0].slug }));
+    }
+  }, [categoryOptions, symbolForm.categoryId]);
 
   const authenticate = useCallback(async () => {
     setAuthError(null);
-    setStatusText("Validando credenciales...");
+    setStatus("Validando credenciales...");
 
     const result = await fetchJson<{ authenticated: boolean }>("/api/admin/session", {
       method: "POST",
       credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: authInput }),
     });
 
     if (!result.ok) {
-      console.error("ADMIN_AUTH_ERROR", result);
       setAuthError(result.message || "Credenciales inválidas");
-      setStatusText("Acceso denegado");
+      setStatus("Acceso denegado");
       return;
     }
 
     setAuthInput("");
     setAuthState("authenticated");
-    setStatusText("Sesión iniciada");
+    setStatus("Sesión iniciada");
   }, [authInput]);
 
   const logout = useCallback(async () => {
@@ -302,228 +318,245 @@ export default function AdminKnowledgePage() {
     });
 
     setAuthState("locked");
-    setDocuments([]);
-    setSearchResults([]);
-    setPendingDeleteDocument(null);
-    setStatusText("Sesión cerrada");
+    setSymbols([]);
+    setCategories([]);
+    setSummary(null);
+    setStatus("Sesión cerrada");
   }, []);
 
-  const requestUpload = useCallback((kind: UploadKind) => {
-    setPendingUploadKind(kind);
-    uploadInputRef.current?.click();
-  }, []);
+  const saveSymbol = useCallback(async () => {
+    const payload = {
+      ...symbolForm,
+      aliases: splitLines(symbolForm.aliasesText),
+      tags: splitLines(symbolForm.tagsText),
+      relatedSymbols: splitLines(symbolForm.relatedText).map((item) => ({ relatedSymbolId: item })),
+      historicalPeriods: safeJsonArray(symbolForm.periodsJson),
+      sources: safeJsonArray(symbolForm.sourcesJson),
+      media: splitLines(symbolForm.mediaLines),
+      translations: safeJsonArray(symbolForm.translationsJson),
+    };
 
-  const onSelectFile = useCallback(async (file: File | null) => {
-    if (!file) return;
+    const endpoint = selectedSymbol ? `/api/symbols/${selectedSymbol.symbol.slug}` : "/api/symbols";
+    const method = selectedSymbol ? "PATCH" : "POST";
 
-    setUploading(true);
-    setUploadProgress(0);
-    setStatusText("Iniciando proceso de importación...");
-
-    const form = new FormData();
-    form.set("file", file);
-    form.set("category", category || "general");
-
-    console.log("ADMIN_UPLOAD_START", {
-      endpoint: "/api/admin/knowledge/documents",
-      fileName: file.name,
-      fileType: file.type || "unknown",
-      fileSize: file.size,
-      category: category || "general",
+    setStatus(selectedSymbol ? "Guardando símbolo..." : "Creando símbolo...");
+    const result = await fetchJson(endpoint, {
+      method,
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
 
-    const uploadResult = await uploadWithProgress("/api/admin/knowledge/documents", form, (value) => {
-      setUploadProgress(value);
-      if (value < 100) {
-        setStatusText(`Subiendo archivo... ${value}%`);
-      }
-    });
-
-    if (!uploadResult.ok) {
-      console.error("ADMIN_UPLOAD_ERROR", uploadResult);
-      if (uploadResult.status === 401) {
-        setAuthState("locked");
-      }
-      if (uploadResult.details) {
-        console.error("ADMIN_UPLOAD_ERROR_DETAILS", uploadResult.details);
-      }
-      setStatusText(uploadResult.error || "Error al subir el archivo");
-      setUploading(false);
+    if (!result.ok) {
+      setStatus(result.message || "No se pudo guardar el símbolo");
       return;
     }
 
-    const payload = uploadResult.data as { result?: { chunkCount?: number } };
-    const chunkCount = payload?.result?.chunkCount || 0;
+    setSelectedSymbolSlug(payload.slug);
+    await loadData();
+    setStatus(selectedSymbol ? "Símbolo actualizado" : "Símbolo creado");
+  }, [loadData, selectedSymbol, symbolForm]);
 
-    setUploadProgress(100);
-    setStatusText(`Documento procesado correctamente. Fragmentos generados: ${chunkCount}`);
-    setUploading(false);
-    await loadDocuments();
-  }, [category, loadDocuments]);
+  const deleteSymbol = useCallback(async () => {
+    if (!selectedSymbol) {
+      return;
+    }
 
-  const deleteDocument = useCallback(async (documentId: string) => {
-    setWorkingDocumentId(documentId);
-    setStatusText("Eliminando documento...");
-
-    const result = await fetchJson<{ success: boolean }>(`/api/admin/knowledge/documents/${documentId}`, {
+    setStatus("Eliminando símbolo...");
+    const result = await fetchJson(`/api/symbols/${selectedSymbol.symbol.slug}`, {
       method: "DELETE",
       credentials: "include",
     });
 
     if (!result.ok) {
-      console.error("ADMIN_DELETE_ERROR", result);
-      if (result.status === 401) {
-        setAuthState("locked");
-      }
-      setStatusText(result.message);
-      setWorkingDocumentId(null);
+      setStatus(result.message || "No se pudo eliminar el símbolo");
       return;
     }
 
-    setStatusText("Documento eliminado");
-    setWorkingDocumentId(null);
-    setPendingDeleteDocument(null);
-    await loadDocuments();
-  }, [loadDocuments]);
+    setSelectedSymbolSlug(null);
+    await loadData();
+    setStatus("Símbolo eliminado");
+  }, [loadData, selectedSymbol]);
 
-  const askDeleteDocument = useCallback((document: AdminDocument) => {
-    setPendingDeleteDocument(document);
-  }, []);
-
-  const reindexDocument = useCallback(async (documentId: string) => {
-    setWorkingDocumentId(documentId);
-    setStatusText("Solicitando reindexación...");
-
-    const result = await fetchJson<{ success: boolean }>(`/api/admin/knowledge/documents/${documentId}/reindex`, {
+  const saveCategory = useCallback(async () => {
+    setStatus(categoryForm.slug ? "Guardando categoría..." : "Creando categoría...");
+    const result = await fetchJson("/api/categories", {
       method: "POST",
       credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slug: categoryForm.slug,
+        name: categoryForm.name,
+        description: categoryForm.description,
+        icon: categoryForm.icon || null,
+        parentId: categoryForm.parentId || null,
+        orderIndex: Number(categoryForm.orderIndex) || 0,
+      }),
     });
 
     if (!result.ok) {
-      console.error("ADMIN_REINDEX_ERROR", result);
-      if (result.status === 401) {
-        setAuthState("locked");
-      }
-      setStatusText(result.message);
-      setWorkingDocumentId(null);
+      setStatus(result.message || "No se pudo guardar la categoría");
       return;
     }
 
-    setStatusText("Reindexación solicitada");
-    setWorkingDocumentId(null);
-    await loadDocuments();
-  }, [loadDocuments]);
+    await loadData();
+    setStatus("Categoría guardada");
+  }, [categoryForm, loadData]);
 
-  const runSearch = useCallback(async () => {
-    const query = searchQuery.trim();
-    if (!query) {
-      setSearchResults([]);
-      return;
-    }
-
-    setStatusText("Buscando fragmentos relevantes...");
-    const result = await fetchJson<{ chunks: SearchChunk[] }>(`/api/admin/knowledge/search?q=${encodeURIComponent(query)}&limit=8`, {
-      method: "GET",
+  const deleteCategory = useCallback(async (category: AdminCategory) => {
+    setStatus("Eliminando categoría...");
+    const result = await fetchJson(`/api/categories/${category.slug}`, {
+      method: "DELETE",
       credentials: "include",
     });
 
     if (!result.ok) {
-      console.error("ADMIN_SEARCH_ERROR", result);
-      if (result.status === 401) {
-        setAuthState("locked");
-      }
-      setStatusText(result.message);
+      setStatus(result.message || "No se pudo eliminar la categoría");
       return;
     }
 
-    setSearchResults(result.data.chunks || []);
-    setStatusText(`Resultados encontrados: ${(result.data.chunks || []).length}`);
-  }, [searchQuery]);
+    await loadData();
+    setStatus("Categoría eliminada");
+  }, [loadData]);
 
-  const fileHint = useMemo(() => {
-    if (pendingUploadKind === "pdf") return "PDF";
-    if (pendingUploadKind === "word") return "Word";
-    return "TXT";
-  }, [pendingUploadKind]);
+  const importCatalog = useCallback(async () => {
+    try {
+      const payload = JSON.parse(importJson) as Record<string, unknown>;
+      setStatus("Importando catálogo...");
+      const result = await fetchJson("/api/admin", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-  const documentCounters = useMemo(() => {
-    const counters = { ready: 0, failed: 0, indexing: 0, queued: 0 };
-    for (const document of documents) {
-      counters[document.status] += 1;
+      if (!result.ok) {
+        setStatus(result.message || "No se pudo importar");
+        return;
+      }
+
+      await loadData();
+      setStatus("Importación completada");
+    } catch {
+      setStatus("JSON de importación inválido");
     }
-    return counters;
-  }, [documents]);
+  }, [importJson, loadData]);
+
+  const uploadMedia = useCallback(async (file: File | null) => {
+    if (!file) {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.set("file", file);
+
+    setStatus("Subiendo imagen...");
+    const result = await fetchJson<{ url: string; fileName: string }>("/api/admin/media", {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    });
+
+    if (!result.ok) {
+      setStatus(result.message || "No se pudo subir la imagen");
+      return;
+    }
+
+    setSymbolForm((current) => ({
+      ...current,
+      mediaLines: [current.mediaLines.trim(), result.data.url].filter(Boolean).join("\n"),
+    }));
+    setImageUploadMessage(`Imagen subida: ${result.data.url}`);
+    setStatus("Imagen lista para asociar al símbolo");
+  }, []);
+
+  const newSymbol = useCallback(() => {
+    setSelectedSymbolSlug(null);
+    setSymbolForm((current) => ({ ...EMPTY_SYMBOL_FORM, categoryId: current.categoryId || categoryOptions[0]?.slug || "" }));
+  }, [categoryOptions]);
+
+  const newCategory = useCallback(() => {
+    setCategoryForm(EMPTY_CATEGORY_FORM);
+  }, []);
+
+  const loadSymbolFromList = useCallback((symbol: AdminSymbolHit) => {
+    setSelectedSymbolSlug(symbol.symbol.slug);
+  }, []);
+
+  if (authState === "checking") {
+    return (
+      <main className="min-h-screen bg-thor-bg text-thor-text admin-grid-bg flex items-center justify-center p-4">
+        <div className="rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+          <div className="flex items-center gap-3 text-thor-muted">
+            <Loader2 size={18} className="animate-spin" />
+            <p className="text-sm">Validando sesión de administrador...</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (authState === "locked") {
+    return (
+      <main className="min-h-screen bg-thor-bg text-thor-text admin-grid-bg flex items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="rounded-xl bg-indigo-500/20 p-2 text-indigo-300">
+              <Shield size={22} />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold">Acceso Signipedia</h2>
+              <p className="text-sm text-thor-muted">Introduce la contraseña del panel.</p>
+            </div>
+          </div>
+
+          <label className="mb-3 block text-sm text-thor-muted">
+            Contraseña
+            <input
+              type="password"
+              value={authInput}
+              onChange={(event) => setAuthInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void authenticate();
+                }
+              }}
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none ring-0 focus:border-indigo-400"
+              placeholder="••••••••••••"
+            />
+          </label>
+
+          {authError ? <p className="mb-3 text-sm text-rose-300">{authError}</p> : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              void authenticate();
+            }}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-500 px-4 py-2 font-medium text-white transition hover:bg-indigo-400"
+          >
+            <Lock size={16} />
+            Entrar al panel
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-thor-bg text-thor-text admin-grid-bg">
       <input
-        ref={uploadInputRef}
+        ref={imageInputRef}
         type="file"
+        accept="image/*"
         className="hidden"
-        accept={fileAcceptByKind(pendingUploadKind)}
         onChange={(event) => {
-          const selected = event.target.files?.[0] || null;
-          void onSelectFile(selected);
+          const file = event.target.files?.[0] || null;
+          void uploadMedia(file);
           event.currentTarget.value = "";
         }}
       />
-
-      {authState === "checking" ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
-            <div className="flex items-center gap-3 text-thor-muted">
-              <Loader2 size={18} className="animate-spin" />
-              <p className="text-sm">Validando sesion de administrador...</p>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {authState === "locked" ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
-            <div className="mb-4 flex items-center gap-3">
-              <div className="rounded-xl bg-indigo-500/20 p-2 text-indigo-300">
-                <Shield size={22} />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold">Acceso Administrador</h2>
-                <p className="text-sm text-thor-muted">Introduce la contraseña para abrir el panel.</p>
-              </div>
-            </div>
-
-            <label className="mb-3 block text-sm text-thor-muted">
-              Contraseña
-              <input
-                type="password"
-                value={authInput}
-                onChange={(event) => setAuthInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void authenticate();
-                  }
-                }}
-                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none ring-0 focus:border-indigo-400"
-                placeholder="••••••••••••"
-              />
-            </label>
-
-            {authError ? <p className="mb-3 text-sm text-rose-300">{authError}</p> : null}
-
-            <button
-              type="button"
-              onClick={() => {
-                void authenticate();
-              }}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-500 px-4 py-2 font-medium text-white transition hover:bg-indigo-400"
-            >
-              <Lock size={16} />
-              Entrar al panel
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       <div className="mx-auto w-full max-w-7xl p-4 md:p-8">
         <header className="mb-6 rounded-2xl border border-slate-700/70 bg-slate-900/90 p-5 shadow-xl backdrop-blur">
@@ -531,29 +564,26 @@ export default function AdminKnowledgePage() {
             <div className="space-y-1">
               <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs uppercase tracking-wider text-cyan-200">
                 <BookOpenText size={14} />
-                Knowledge Base
+                Signipedia Admin
               </div>
-              <h1 className="text-2xl font-bold md:text-3xl">ThorAI Admin Panel</h1>
-              <p className="text-sm text-thor-muted">Importa documentos, monitorea indexación y consulta fragmentos.</p>
+              <h1 className="text-2xl font-bold md:text-3xl">Panel editorial y de catálogo</h1>
+              <p className="text-sm text-thor-muted">Símbolos, categorías, medios, relaciones e importación masiva.</p>
             </div>
 
             <div className="flex items-center gap-2">
-              <Link
-                href="/"
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
-              >
+              <Link href="/" className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700">
                 <ArrowLeft size={16} />
-                Volver al Chat
+                Volver al índice
               </Link>
               <button
                 type="button"
                 onClick={() => {
-                  void loadDocuments();
+                  void loadData();
                 }}
-                disabled={isBusy}
+                disabled={loading}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700 disabled:opacity-60"
               >
-                <RefreshCw size={16} className={loadingDocs ? "animate-spin" : ""} />
+                <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
                 Actualizar
               </button>
               <button
@@ -570,285 +600,257 @@ export default function AdminKnowledgePage() {
           </div>
         </header>
 
-        <section className="mb-6 grid gap-4 md:grid-cols-3">
+        <section className="mb-6 grid gap-4 md:grid-cols-4">
           <article className="rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-lg">
-            <div className="mb-3 text-sm text-thor-muted">Subir documentos</div>
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => requestUpload("pdf")}
-                disabled={isBusy}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-500 px-3 py-2 text-sm font-medium hover:bg-indigo-400 disabled:opacity-60"
-              >
-                <FileUp size={16} />
-                ➕ Subir PDF
-              </button>
-              <button
-                type="button"
-                onClick={() => requestUpload("word")}
-                disabled={isBusy}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 px-3 py-2 text-sm font-medium hover:bg-cyan-500 disabled:opacity-60"
-              >
-                <FileType size={16} />
-                ➕ Subir Word
-              </button>
-              <button
-                type="button"
-                onClick={() => requestUpload("text")}
-                disabled={isBusy}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-700 px-3 py-2 text-sm font-medium hover:bg-slate-600 disabled:opacity-60"
-              >
-                <FileText size={16} />
-                ➕ Subir TXT
-              </button>
-            </div>
-            <p className="mt-3 text-xs text-thor-muted">Tipo seleccionado: {fileHint}</p>
+            <div className="text-sm text-thor-muted">Símbolos</div>
+            <div className="mt-2 text-3xl font-bold">{summary?.symbols ?? 0}</div>
+            <div className="mt-2 text-xs text-thor-muted">Seed: {summary?.seededSymbols ?? 0}</div>
           </article>
-
           <article className="rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-lg">
-            <div className="mb-3 text-sm text-thor-muted">Categoría por defecto</div>
-            <input
-              value={category}
-              onChange={(event) => setCategory(event.target.value)}
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-indigo-400"
-              placeholder="general"
-            />
-            <p className="mt-3 text-xs text-thor-muted">Los metadatos usan esta categoría al indexar.</p>
+            <div className="text-sm text-thor-muted">Categorías</div>
+            <div className="mt-2 text-3xl font-bold">{summary?.categories ?? 0}</div>
+            <div className="mt-2 text-xs text-thor-muted">Seed: {summary?.seededCategories ?? 0}</div>
           </article>
-
-          <article className="rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-lg">
-            <div className="mb-3 text-sm text-thor-muted">Progreso</div>
-            <div className="mb-2 h-3 overflow-hidden rounded-full bg-slate-800">
-              <div
-                className="progress-shine h-full rounded-full transition-all"
-                style={{ width: `${uploading ? uploadProgress : 0}%` }}
-              />
+          <article className="rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-lg md:col-span-2">
+            <div className="text-sm text-thor-muted">Estado</div>
+            <div className="mt-2 flex items-center gap-2 text-sm text-thor-muted">
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+              {status}
             </div>
-            <div className="flex items-center justify-between text-xs text-thor-muted">
-              <span>{uploading ? `Procesando ${uploadProgress}%` : "Sin carga activa"}</span>
-              {uploading ? <Loader2 size={14} className="animate-spin" /> : <CircleCheck size={14} />}
-            </div>
-            <p className="mt-3 text-xs text-thor-muted">{statusText}</p>
+            {imageUploadMessage ? <div className="mt-2 text-xs text-cyan-200">{imageUploadMessage}</div> : null}
           </article>
         </section>
 
-        <section className="mb-6 rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-lg">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
+        <section className="mb-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <article className="rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-lg">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm text-thor-muted">Símbolos</div>
+                <h2 className="text-lg font-semibold">Crear y editar</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={newSymbol} className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700">
+                  <Plus size={16} />
+                  Nuevo
+                </button>
+                <button type="button" onClick={() => imageInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-200 hover:bg-cyan-500/20">
+                  <ImagePlus size={16} />
+                  Subir imagen
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="grid gap-2 text-sm text-thor-muted">
+                Slug
+                <input className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.slug} onChange={(event) => setSymbolForm((current) => ({ ...current, slug: event.target.value }))} />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted">
+                Nombre
+                <input className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.name} onChange={(event) => setSymbolForm((current) => ({ ...current, name: event.target.value }))} />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
+                Símbolo / glyph
+                <input className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.canonicalGlyph} onChange={(event) => setSymbolForm((current) => ({ ...current, canonicalGlyph: event.target.value }))} />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
+                Significado
+                <textarea className="min-h-24 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.meaning} onChange={(event) => setSymbolForm((current) => ({ ...current, meaning: event.target.value }))} />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
+                Historia
+                <textarea className="min-h-24 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.history} onChange={(event) => setSymbolForm((current) => ({ ...current, history: event.target.value }))} />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
+                Origen
+                <textarea className="min-h-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.origin} onChange={(event) => setSymbolForm((current) => ({ ...current, origin: event.target.value }))} />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
+                Usos actuales
+                <textarea className="min-h-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.currentUses} onChange={(event) => setSymbolForm((current) => ({ ...current, currentUses: event.target.value }))} />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
+                Descripción SEO
+                <textarea className="min-h-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.description} onChange={(event) => setSymbolForm((current) => ({ ...current, description: event.target.value }))} />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted">
+                Categoría
+                <select className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.categoryId} onChange={(event) => setSymbolForm((current) => ({ ...current, categoryId: event.target.value }))}>
+                  {categoryOptions.map((category) => (
+                    <option key={category.id} value={category.slug}>{category.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted">
+                Idioma
+                <input className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.language} onChange={(event) => setSymbolForm((current) => ({ ...current, language: event.target.value }))} />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted">
+                Estado
+                <select className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.status} onChange={(event) => setSymbolForm((current) => ({ ...current, status: event.target.value as SymbolFormState["status"] }))}>
+                  <option value="draft">draft</option>
+                  <option value="review">review</option>
+                  <option value="published">published</option>
+                  <option value="archived">archived</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-thor-muted md:col-span-2">
+                <input type="checkbox" checked={symbolForm.isFeatured} onChange={(event) => setSymbolForm((current) => ({ ...current, isFeatured: event.target.checked }))} />
+                Destacado editorial
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
+                Alias por línea
+                <textarea className="min-h-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.aliasesText} onChange={(event) => setSymbolForm((current) => ({ ...current, aliasesText: event.target.value }))} placeholder="sigma&#10;sumatoria" />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
+                Etiquetas por línea
+                <textarea className="min-h-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.tagsText} onChange={(event) => setSymbolForm((current) => ({ ...current, tagsText: event.target.value }))} placeholder="matemática&#10;serie" />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
+                Relacionados por slug, uno por línea
+                <textarea className="min-h-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.relatedText} onChange={(event) => setSymbolForm((current) => ({ ...current, relatedText: event.target.value }))} placeholder="infinito&#10;pi" />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
+                Medios / URLs por línea
+                <textarea className="min-h-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.mediaLines} onChange={(event) => setSymbolForm((current) => ({ ...current, mediaLines: event.target.value }))} placeholder="/signipedia-media/symbol.png" />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
+                Periodos históricos JSON
+                <textarea className="min-h-24 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.periodsJson} onChange={(event) => setSymbolForm((current) => ({ ...current, periodsJson: event.target.value }))} />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
+                Fuentes JSON
+                <textarea className="min-h-24 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.sourcesJson} onChange={(event) => setSymbolForm((current) => ({ ...current, sourcesJson: event.target.value }))} />
+              </label>
+              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
+                Traducciones JSON
+                <textarea className="min-h-24 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.translationsJson} onChange={(event) => setSymbolForm((current) => ({ ...current, translationsJson: event.target.value }))} />
+              </label>
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Button type="button" variant="primary" onClick={() => void saveSymbol()} leftIcon={<Upload size={16} />}>
+                Guardar símbolo
+              </Button>
+              <Button type="button" variant="secondary" onClick={newSymbol} leftIcon={<Plus size={16} />}>
+                Nuevo símbolo
+              </Button>
+              <Button type="button" variant="danger" onClick={() => void deleteSymbol()} leftIcon={<Trash2 size={16} />} disabled={!selectedSymbol}>
+                Eliminar símbolo
+              </Button>
+            </div>
+          </article>
+
+          <aside className="grid gap-6">
+            <article className="rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-lg">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm text-thor-muted">Importación</div>
+                  <h2 className="text-lg font-semibold">JSON / CSV</h2>
+                </div>
+                <Button type="button" variant="secondary" onClick={() => void importCatalog()} leftIcon={<FileUp size={16} />}>
+                  Importar
+                </Button>
+              </div>
+              <textarea
+                className="min-h-72 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-thor-text outline-none focus:border-cyan-400"
+                value={importJson}
+                onChange={(event) => setImportJson(event.target.value)}
+              />
+            </article>
+
+            <article className="rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-lg">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm text-thor-muted">Categorías</div>
+                  <h2 className="text-lg font-semibold">Gestionar taxonomía</h2>
+                </div>
+                <Button type="button" variant="secondary" onClick={newCategory} leftIcon={<Plus size={16} />}>
+                  Nueva
+                </Button>
+              </div>
+
+              <div className="grid gap-3">
+                <input className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={categoryForm.slug} onChange={(event) => setCategoryForm((current) => ({ ...current, slug: event.target.value }))} placeholder="slug" />
+                <input className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={categoryForm.name} onChange={(event) => setCategoryForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nombre" />
+                <textarea className="min-h-24 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={categoryForm.description} onChange={(event) => setCategoryForm((current) => ({ ...current, description: event.target.value }))} placeholder="Descripción" />
+                <input className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={categoryForm.icon} onChange={(event) => setCategoryForm((current) => ({ ...current, icon: event.target.value }))} placeholder="Icono" />
+                <input className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={categoryForm.parentId} onChange={(event) => setCategoryForm((current) => ({ ...current, parentId: event.target.value }))} placeholder="Parent slug" />
+                <input className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={categoryForm.orderIndex} onChange={(event) => setCategoryForm((current) => ({ ...current, orderIndex: event.target.value }))} placeholder="Orden" />
+              </div>
+
+              <div className="mt-4 flex gap-2">
+                <Button type="button" variant="primary" onClick={() => void saveCategory()} leftIcon={<Upload size={16} />}>
+                  Guardar categoría
+                </Button>
+              </div>
+
+              <div className="mt-5 grid gap-2">
+                {categories.map((category) => (
+                  <div key={category.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+                    <button
+                      type="button"
+                      className="text-left"
+                      onClick={() =>
+                        setCategoryForm({
+                          slug: category.slug,
+                          name: category.name,
+                          description: category.description,
+                          icon: category.icon || "",
+                          parentId: category.parentId || "",
+                          orderIndex: String(category.orderIndex),
+                        })
+                      }
+                    >
+                      <strong className="block text-thor-text">{category.name}</strong>
+                      <span className="text-xs text-thor-muted">{category.slug}</span>
+                    </button>
+                    <button type="button" onClick={() => void deleteCategory(category)} className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/20">
+                      Eliminar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </article>
+          </aside>
+        </section>
+
+        <section className="rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-lg">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
             <div className="inline-flex items-center gap-2 text-sm text-thor-muted">
               <Search size={16} />
-              Buscar fragmentos
+              Buscar símbolos
             </div>
-            <div className="ml-auto flex w-full max-w-lg items-center gap-2">
-              <input
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    void runSearch();
-                  }
-                }}
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400"
-                placeholder="Buscar por contenido..."
-              />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="ml-auto w-full max-w-lg rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400"
+              placeholder="Buscar por nombre, alias, etiqueta o descripción..."
+            />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {filteredSymbols.map((entry) => (
               <button
+                key={entry.symbol.id}
                 type="button"
-                onClick={() => {
-                  void runSearch();
-                }}
-                disabled={isBusy}
-                className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-3 py-2 text-sm font-medium hover:bg-cyan-500 disabled:opacity-60"
+                onClick={() => loadSymbolFromList(entry)}
+                className={`rounded-2xl border p-4 text-left transition hover:bg-slate-800/40 ${selectedSymbolSlug === entry.symbol.slug ? "border-cyan-400 bg-cyan-500/10" : "border-slate-700 bg-slate-950"}`}
               >
-                <FileSearch size={16} />
-                Buscar
-              </button>
-            </div>
-          </div>
-
-          {searchResults.length > 0 ? (
-            <div className="grid gap-3">
-              {searchResults.map((entry) => (
-                <article key={entry.chunk.id} className="rounded-xl border border-slate-700 bg-slate-950 p-3">
-                  <div className="mb-2 flex items-center justify-between text-xs text-thor-muted">
-                    <span>{entry.document.name}</span>
-                    <span>Score: {entry.score.toFixed(3)}</span>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-2xl font-semibold">{entry.symbol.canonicalGlyph || "∎"}</div>
+                    <h3 className="mt-2 text-base font-semibold text-thor-text">{entry.symbol.name}</h3>
+                    <p className="mt-1 text-xs text-thor-muted">{entry.symbol.slug}</p>
                   </div>
-                  <p className="text-sm text-thor-text">{entry.chunk.content.slice(0, 260)}...</p>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-thor-muted">Sin resultados aún.</p>
-          )}
-        </section>
-
-        <section className="rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-lg">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold">Lista de documentos</h2>
-            <span className="text-xs text-thor-muted">
-              Total: {documents.length} | Ready: {documentCounters.ready} | Failed: {documentCounters.failed} | Indexing: {documentCounters.indexing}
-            </span>
-          </div>
-
-          <div className="mb-4 grid gap-2 md:grid-cols-4">
-            <input
-              value={listSearchFilter}
-              onChange={(event) => setListSearchFilter(event.target.value)}
-              className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400"
-              placeholder="Filtro por nombre"
-            />
-            <input
-              value={listCategoryFilter}
-              onChange={(event) => setListCategoryFilter(event.target.value)}
-              className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400"
-              placeholder="Filtro por categoría"
-            />
-            <select
-              value={listStatusFilter}
-              onChange={(event) => setListStatusFilter(event.target.value as DocumentStatusFilter)}
-              className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400"
-            >
-              <option value="all">Todos los estados</option>
-              <option value="queued">queued</option>
-              <option value="indexing">indexing</option>
-              <option value="ready">ready</option>
-              <option value="failed">failed</option>
-            </select>
-            <select
-              value={String(pageLimit)}
-              onChange={(event) => setPageLimit(Number(event.target.value) || 50)}
-              className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400"
-            >
-              <option value="25">25 por página</option>
-              <option value="50">50 por página</option>
-              <option value="100">100 por página</option>
-              <option value="200">200 por página</option>
-            </select>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-700 text-sm">
-              <thead>
-                <tr className="text-left text-thor-muted">
-                  <th className="px-3 py-2 font-medium">ID</th>
-                  <th className="px-3 py-2 font-medium">Nombre</th>
-                  <th className="px-3 py-2 font-medium">Categoria</th>
-                  <th className="px-3 py-2 font-medium">Subido</th>
-                  <th className="px-3 py-2 font-medium">Tamano</th>
-                  <th className="px-3 py-2 font-medium">Ruta archivo</th>
-                  <th className="px-3 py-2 font-medium">Estado</th>
-                  <th className="px-3 py-2 font-medium">Fragmentos</th>
-                  <th className="px-3 py-2 font-medium">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {documents.length === 0 ? (
-                  <tr>
-                    <td className="px-3 py-5 text-thor-muted" colSpan={9}>
-                      No hay documentos indexados.
-                    </td>
-                  </tr>
-                ) : (
-                  documents.map((document) => (
-                    <tr key={document.id} className="transition hover:bg-slate-800/40">
-                      <td className="px-3 py-3 text-xs text-thor-muted">{document.id.slice(0, 8)}...</td>
-                      <td className="px-3 py-3">
-                        <div className="font-medium text-thor-text">{document.name}</div>
-                        <div className="text-xs text-thor-muted">{document.indexedAt ? `Indexado: ${formatDate(document.indexedAt)}` : "Sin indexar"}</div>
-                      </td>
-                      <td className="px-3 py-3 text-thor-muted">{document.category}</td>
-                      <td className="px-3 py-3 text-thor-muted">{formatDate(document.uploadedAt || document.createdAt)}</td>
-                      <td className="px-3 py-3 text-thor-muted">{formatFileSize(document.fileSizeBytes)}</td>
-                      <td className="px-3 py-3 text-xs text-thor-muted">{document.filePath || "-"}</td>
-                      <td className="px-3 py-3">
-                        <span className={`inline-flex rounded-full px-2 py-1 text-xs ${getStatusClasses(document.status)}`}>
-                          {document.status}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3">{document.chunkCount}</td>
-                      <td className="px-3 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCategory(document.category || "general");
-                              setStatusText(`Categoría cargada en editor: ${document.category}`);
-                            }}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-600 bg-slate-800 px-2 py-1 text-xs hover:bg-slate-700"
-                            disabled={isBusy}
-                          >
-                            <RefreshCw size={12} />
-                            Actualizar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void reindexDocument(document.id);
-                            }}
-                            className="inline-flex items-center gap-1 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-xs text-cyan-200 hover:bg-cyan-500/20"
-                            disabled={isBusy}
-                          >
-                            <RefreshCw size={12} className={workingDocumentId === document.id ? "animate-spin" : ""} />
-                            Reindexar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              askDeleteDocument(document);
-                            }}
-                            className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/20"
-                            disabled={isBusy}
-                          >
-                            <Trash2 size={12} />
-                            Eliminar
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-thor-muted">
-            <UploadCloud size={14} />
-            Barra de progreso activa durante subida y procesamiento inicial.
+                  <span className="rounded-full border border-slate-700 px-2 py-1 text-[11px] uppercase tracking-wider text-thor-muted">{entry.symbol.status}</span>
+                </div>
+                <p className="mt-3 line-clamp-3 text-sm text-thor-muted">{entry.symbol.meaning}</p>
+              </button>
+            ))}
           </div>
         </section>
       </div>
-
-      {pendingDeleteDocument ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl border border-rose-500/30 bg-slate-900 p-5 shadow-2xl">
-            <h3 className="text-lg font-semibold text-rose-200">Confirmar eliminacion</h3>
-            <p className="mt-2 text-sm text-thor-muted">
-              Vas a eliminar el documento <span className="font-medium text-thor-text">{pendingDeleteDocument.name}</span> y su archivo persistente.
-            </p>
-            <p className="mt-1 text-xs text-thor-muted">Ruta: {pendingDeleteDocument.filePath || "-"}</p>
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setPendingDeleteDocument(null)}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
-                disabled={isBusy}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void deleteDocument(pendingDeleteDocument.id);
-                }}
-                className="inline-flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200 hover:bg-rose-500/20"
-                disabled={isBusy}
-              >
-                <Trash2 size={14} />
-                Eliminar definitivamente
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </main>
   );
 }

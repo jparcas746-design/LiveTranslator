@@ -59,7 +59,7 @@ export function createRepositoryNotConfiguredError(): RepositoryCapabilityError 
   return {
     code: "KNOWLEDGE_DB_NOT_CONFIGURED",
     message:
-      "Knowledge Engine database is not configured. Set THOR_KNOWLEDGE_DB_DSN (or POSTGRES_URL / DATABASE_URL) and run the pgvector schema.",
+      "Knowledge Engine database is not configured. Set DATABASE_URL to a valid PostgreSQL connection string and run the pgvector schema.",
   };
 }
 

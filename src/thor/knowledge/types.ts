@@ -1,4 +1,4 @@
-// Canonical domain types for the ThorAI Knowledge Engine.
+// Canonical domain types for the Signipedia knowledge subsystem.
 export type SourceType = "pdf" | "word" | "powerpoint" | "markdown" | "epub" | "text" | "html" | "web" | "image" | "video";
 
 export type IndexStatus = "queued" | "indexing" | "ready" | "failed";

@@ -1,4 +1,4 @@
-# ThorAI Knowledge Engine
+# Signipedia Knowledge Engine
 
 This module is organized for production-grade growth and strict separation of concerns.
 
@@ -13,7 +13,7 @@ This module is organized for production-grade growth and strict separation of co
 ## Required Environment Variables
 
 - `THOR_ADMIN_KEY`: admin-only access to knowledge management APIs
-- `THOR_KNOWLEDGE_DB_DSN`: PostgreSQL connection string
+- `DATABASE_URL`: PostgreSQL connection string
 - `THOR_EMBEDDINGS_PROVIDER`: `hash` (default) or `ollama`
 - `THOR_EMBED_DIM`: embedding dimensions (default: 384, set to 768 if schema uses vector(768))
 - `THOR_OLLAMA_URL`: Ollama base URL (if using ollama embeddings)

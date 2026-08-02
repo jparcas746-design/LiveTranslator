@@ -40,6 +40,17 @@ CREATE TABLE IF NOT EXISTS thor_knowledge_chunks (
   UNIQUE(document_id, chunk_index)
 );
 
+CREATE TABLE IF NOT EXISTS thor_knowledge_sources (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  storage_key TEXT NOT NULL UNIQUE,
+  file_name TEXT NOT NULL,
+  source_type TEXT NOT NULL,
+  category TEXT NOT NULL,
+  file_bytes BYTEA NOT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_thor_knowledge_documents_category
   ON thor_knowledge_documents(category);
 
@@ -57,6 +68,9 @@ CREATE INDEX IF NOT EXISTS idx_thor_knowledge_documents_file_path
 
 CREATE INDEX IF NOT EXISTS idx_thor_knowledge_chunks_document
   ON thor_knowledge_chunks(document_id);
+
+CREATE INDEX IF NOT EXISTS idx_thor_knowledge_sources_storage_key
+  ON thor_knowledge_sources(storage_key);
 
 CREATE INDEX IF NOT EXISTS idx_thor_knowledge_chunks_embedding_ivfflat
   ON thor_knowledge_chunks
