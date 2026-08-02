@@ -118,6 +118,7 @@ function ensureSeeded() {
       isFeatured: Boolean(symbol.featured),
       description: symbol.meaning,
       canonicalGlyph: symbol.glyph,
+      imageUrl: null,
       language: "es",
       createdAt: now,
       updatedAt: now,
@@ -362,14 +363,15 @@ export const inMemorySignipediaRepository: SignipediaRepository = {
       history: input.history,
       origin: input.origin,
       currentUses: input.currentUses,
-      variants: [],
-      curiosities: [],
+      variants: input.variants || [],
+      curiosities: input.curiosities || [],
       synonyms: [],
       categoryId: input.categoryId,
       status: input.status || "draft",
       isFeatured: Boolean(input.isFeatured),
       description: input.description || input.meaning,
       canonicalGlyph: input.canonicalGlyph || "",
+      imageUrl: null,
       language: input.language || "es",
       createdAt: now,
       updatedAt: now,
@@ -393,14 +395,15 @@ export const inMemorySignipediaRepository: SignipediaRepository = {
       history: input.history ?? existing.history,
       origin: input.origin ?? existing.origin,
       currentUses: input.currentUses ?? existing.currentUses,
-      variants: existing.variants,
-      curiosities: existing.curiosities,
+      variants: input.variants ?? existing.variants,
+      curiosities: input.curiosities ?? existing.curiosities,
       synonyms: existing.synonyms,
       categoryId: input.categoryId ?? existing.categoryId,
       status: input.status ?? existing.status,
       isFeatured: typeof input.isFeatured === "boolean" ? input.isFeatured : existing.isFeatured,
       description: input.description ?? existing.description,
       canonicalGlyph: input.canonicalGlyph ?? existing.canonicalGlyph,
+      imageUrl: existing.imageUrl,
       language: input.language ?? existing.language,
       createdAt: existing.createdAt,
       updatedAt: new Date().toISOString(),
@@ -520,6 +523,20 @@ export const inMemorySignipediaRepository: SignipediaRepository = {
       sortOrder: item.sortOrder,
     }));
     runtime.media.set(symbolId, values);
+
+    const symbol = runtime.symbols.get(symbolId);
+    if (symbol) {
+      const primaryImage = values
+        .filter((item) => item.kind === "image")
+        .sort((left, right) => left.sortOrder - right.sortOrder)[0]?.url || null;
+
+      runtime.symbols.set(symbolId, {
+        ...symbol,
+        imageUrl: primaryImage,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
     return values;
   },
 

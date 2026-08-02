@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS signipedia_symbols (
   status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'review', 'published', 'archived')),
   is_featured boolean NOT NULL DEFAULT false,
   embedding vector(768),
+  vision_embedding vector(512),
+  vision_embedding_source text,
   search_document tsvector,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -40,6 +42,8 @@ CREATE TABLE IF NOT EXISTS signipedia_symbols (
 ALTER TABLE signipedia_symbols
   ADD COLUMN IF NOT EXISTS variants jsonb NOT NULL DEFAULT '[]'::jsonb,
   ADD COLUMN IF NOT EXISTS curiosities jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS vision_embedding vector(512),
+  ADD COLUMN IF NOT EXISTS vision_embedding_source text,
   ADD COLUMN IF NOT EXISTS search_document tsvector;
 
 DO $$

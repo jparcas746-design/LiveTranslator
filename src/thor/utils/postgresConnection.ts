@@ -13,15 +13,9 @@ function validatePostgresConnectionString(connectionString: string, label: strin
     throw new Error(`${label} database is misconfigured: DATABASE_URL is truncated and only contains the PostgreSQL scheme prefix. Provide a full connection string with username, password, host, port, and database name.`);
   }
 
-  console.log("Starts with postgres://:", connectionString.startsWith("postgres://"));
-  console.log("Starts with postgresql://:", connectionString.startsWith("postgresql://"));
-  console.log("Starts with postgresql:", connectionString.startsWith("postgresql:"));
-  console.log("Scheme-only pattern:", /^[a-z][a-z0-9+.-]*:$/.test(connectionString));
-
   try {
     url = new URL(connectionString);
-  } catch (error) {
-    console.error(error);
+  } catch {
     throw new Error(`${label} database is misconfigured: DATABASE_URL must be a valid PostgreSQL connection string (postgres:// or postgresql://).`);
   }
 

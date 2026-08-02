@@ -1,13 +1,7 @@
-import { NextResponse } from "next/server";
+import { handleRecognitionRequest } from "@/app/api/recognition/_shared";
 
 export const runtime = "nodejs";
 
-export async function POST() {
-  return NextResponse.json(
-    {
-      error: "Camera recognition is planned but not enabled yet.",
-      status: "placeholder",
-    },
-    { status: 501 }
-  );
+export async function POST(request: Request) {
+  return handleRecognitionRequest(request);
 }

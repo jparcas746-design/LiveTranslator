@@ -40,6 +40,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     if (Array.isArray(body.aliases)) {
       await engine.setAliases(updated.id, parseStringArray(body.aliases), updated.language);
     }
+    if (Array.isArray(body.synonyms)) {
+      await engine.setSynonyms(updated.id, parseStringArray(body.synonyms), updated.language);
+    }
     if (Array.isArray(body.tags)) {
       await engine.setTags(updated.id, parseStringArray(body.tags), updated.language);
     }

@@ -1,24 +1,36 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   BookOpenText,
   Check,
+  Eye,
+  EyeOff,
   FileUp,
+  FileText,
+  Globe,
   ImagePlus,
+  Images,
+  Link2,
   Loader2,
   Lock,
+  PenSquare,
   Plus,
   RefreshCw,
   Search,
+  Settings2,
   Shield,
+  Sparkles,
   Trash2,
   Upload,
 } from "lucide-react";
 import { fetchJson } from "@/lib/fetchJson";
 import { Button } from "@/components/ui/Button";
+import { normalizeL2, VISION_EMBEDDING_DIMENSIONS } from "@/thor/signipedia/recognition/vectorMath";
+import { CLIP_VISION_MODEL_ID } from "@/thor/signipedia/recognition/clipConfig";
 
 type AdminCategory = {
   id: string;
@@ -42,11 +54,15 @@ type AdminSymbolHit = {
     history: string;
     origin: string;
     currentUses: string;
+    variants: string[];
+    curiosities: string[];
+    synonyms: string[];
     categoryId: string;
     status: "draft" | "review" | "published" | "archived";
     isFeatured: boolean;
     description: string;
     canonicalGlyph: string;
+    imageUrl?: string | null;
     language: string;
     createdAt: string;
     updatedAt: string;
@@ -82,7 +98,10 @@ type SymbolFormState = {
   language: string;
   status: "draft" | "review" | "published" | "archived";
   isFeatured: boolean;
+  variantsText: string;
+  curiositiesText: string;
   aliasesText: string;
+  synonymsText: string;
   tagsText: string;
   relatedText: string;
   periodsJson: string;
@@ -100,6 +119,48 @@ type CategoryFormState = {
   orderIndex: string;
 };
 
+type VisionEmbeddingQueueItem = {
+  symbolId: string;
+  slug: string;
+  name: string;
+  imageUrl: string | null;
+  status: "pending" | "up-to-date" | "missing-image";
+  reason: string;
+  currentDimensions: number | null;
+  currentSource: string | null;
+  needsBackfill: boolean;
+};
+
+type VisionEmbeddingQueueResponse = {
+  totals: {
+    symbolsTotal: number;
+    withImage: number;
+    missingImage: number;
+    valid512: number;
+    pending: number;
+  };
+  queue: VisionEmbeddingQueueItem[];
+  pending: VisionEmbeddingQueueItem[];
+};
+
+type VisionBackfillProgress = {
+  current: number;
+  total: number;
+  success: number;
+  skipped: number;
+  failed: number;
+  currentSlug: string;
+};
+
+type ClipRuntime = {
+  modelId: string;
+  processor: (input: unknown) => Promise<Record<string, unknown>>;
+  model: (inputs: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  RawImage: {
+    fromBlob: (blob: Blob) => Promise<unknown>;
+  };
+};
+
 const EMPTY_SYMBOL_FORM: SymbolFormState = {
   slug: "",
   name: "",
@@ -113,7 +174,10 @@ const EMPTY_SYMBOL_FORM: SymbolFormState = {
   language: "es",
   status: "draft",
   isFeatured: false,
+  variantsText: "",
+  curiositiesText: "",
   aliasesText: "",
+  synonymsText: "",
   tagsText: "",
   relatedText: "",
   periodsJson: "[]",
@@ -148,9 +212,12 @@ function safeJsonArray<T>(value: string, fallback: T[] = []): T[] {
 }
 
 export default function AdminPage() {
+  const router = useRouter();
   const [authState, setAuthState] = useState<"checking" | "locked" | "authenticated">("checking");
   const [authInput, setAuthInput] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [status, setStatus] = useState("Ready");
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<AdminSummaryResponse["summary"] | null>(null);
@@ -162,7 +229,12 @@ export default function AdminPage() {
   const [categoryForm, setCategoryForm] = useState<CategoryFormState>(EMPTY_CATEGORY_FORM);
   const [importJson, setImportJson] = useState("{\n  \"categories\": [],\n  \"symbols\": []\n}");
   const [imageUploadMessage, setImageUploadMessage] = useState<string | null>(null);
+  const [isBackfilling, setIsBackfilling] = useState(false);
+  const [backfillProgress, setBackfillProgress] = useState<VisionBackfillProgress | null>(null);
+  const [backfillLogs, setBackfillLogs] = useState<string[]>([]);
+  const [backfillTotals, setBackfillTotals] = useState<VisionEmbeddingQueueResponse["totals"] | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const clipRuntimeRef = useRef<ClipRuntime | null>(null);
   const selectedSymbol = useMemo(
     () => symbols.find((item) => item.symbol.slug === selectedSymbolSlug) || null,
     [symbols, selectedSymbolSlug]
@@ -204,6 +276,7 @@ export default function AdminPage() {
 
     if (!result.ok || !result.data.authenticated) {
       setAuthState("locked");
+      router.replace("/admin/login");
       if (!result.ok) {
         setAuthError(result.message || "No se pudo validar la sesión.");
       }
@@ -212,7 +285,7 @@ export default function AdminPage() {
 
     setAuthState("authenticated");
     return true;
-  }, []);
+  }, [router]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -227,6 +300,7 @@ export default function AdminPage() {
     if (!result.ok) {
       if (result.status === 401) {
         setAuthState("locked");
+        router.replace("/admin/login");
       }
       setStatus(result.message || "No se pudo cargar el catálogo");
       setLoading(false);
@@ -238,7 +312,7 @@ export default function AdminPage() {
     setSymbols(result.data.items.symbols || []);
     setStatus(`Catálogo cargado: ${result.data.summary.symbols} símbolos`);
     setLoading(false);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     void (async () => {
@@ -265,11 +339,14 @@ export default function AdminPage() {
         origin: selectedSymbol.symbol.origin,
         currentUses: selectedSymbol.symbol.currentUses,
         description: selectedSymbol.symbol.description,
-        categoryId: selectedSymbol.symbol.categoryId,
+        categoryId: selectedSymbol.category?.slug || selectedSymbol.symbol.categoryId,
         language: selectedSymbol.symbol.language,
         status: selectedSymbol.symbol.status,
         isFeatured: selectedSymbol.symbol.isFeatured,
+        variantsText: (selectedSymbol.symbol.variants || []).join("\n"),
+        curiositiesText: (selectedSymbol.symbol.curiosities || []).join("\n"),
         aliasesText: selectedSymbol.aliases.join("\n"),
+        synonymsText: (selectedSymbol.symbol.synonyms || []).join("\n"),
         tagsText: selectedSymbol.tags.join("\n"),
         relatedText: "",
         periodsJson: "[]",
@@ -292,6 +369,7 @@ export default function AdminPage() {
   const authenticate = useCallback(async () => {
     setAuthError(null);
     setStatus("Validando credenciales...");
+    setIsAuthenticating(true);
 
     const result = await fetchJson<{ authenticated: boolean }>("/api/admin/session", {
       method: "POST",
@@ -303,12 +381,14 @@ export default function AdminPage() {
     if (!result.ok) {
       setAuthError(result.message || "Credenciales inválidas");
       setStatus("Acceso denegado");
+      setIsAuthenticating(false);
       return;
     }
 
     setAuthInput("");
     setAuthState("authenticated");
     setStatus("Sesión iniciada");
+    setIsAuthenticating(false);
   }, [authInput]);
 
   const logout = useCallback(async () => {
@@ -322,12 +402,16 @@ export default function AdminPage() {
     setCategories([]);
     setSummary(null);
     setStatus("Sesión cerrada");
-  }, []);
+    router.push("/");
+  }, [router]);
 
   const saveSymbol = useCallback(async () => {
     const payload = {
       ...symbolForm,
+      variants: splitLines(symbolForm.variantsText),
+      curiosities: splitLines(symbolForm.curiositiesText),
       aliases: splitLines(symbolForm.aliasesText),
+      synonyms: splitLines(symbolForm.synonymsText),
       tags: splitLines(symbolForm.tagsText),
       relatedSymbols: splitLines(symbolForm.relatedText).map((item) => ({ relatedSymbolId: item })),
       historicalPeriods: safeJsonArray(symbolForm.periodsJson),
@@ -483,13 +567,189 @@ export default function AdminPage() {
     setSelectedSymbolSlug(symbol.symbol.slug);
   }, []);
 
+  const pushBackfillLog = useCallback((line: string) => {
+    setBackfillLogs((current) => [`${new Date().toLocaleTimeString()} ${line}`, ...current].slice(0, 80));
+  }, []);
+
+  const loadClipRuntime = useCallback(async () => {
+    if (clipRuntimeRef.current) {
+      return clipRuntimeRef.current;
+    }
+
+    const transformers = await import("@huggingface/transformers");
+    const { env, AutoProcessor, CLIPVisionModelWithProjection, RawImage } = transformers;
+
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+
+    const modelId = CLIP_VISION_MODEL_ID;
+    const processor = await AutoProcessor.from_pretrained(modelId);
+    const model = await CLIPVisionModelWithProjection.from_pretrained(modelId);
+
+    clipRuntimeRef.current = {
+      modelId,
+      processor: processor as ClipRuntime["processor"],
+      model: model as ClipRuntime["model"],
+      RawImage: RawImage as ClipRuntime["RawImage"],
+    };
+
+    return clipRuntimeRef.current;
+  }, []);
+
+  const generateVisionEmbeddings = useCallback(async () => {
+    setIsBackfilling(true);
+    setBackfillLogs([]);
+    setBackfillProgress(null);
+    setStatus("Preparando backfill de vision_embedding...");
+
+    const queueResult = await fetchJson<VisionEmbeddingQueueResponse>("/api/admin/vision-embeddings", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    });
+
+    if (!queueResult.ok) {
+      setStatus(queueResult.message || "No se pudo cargar la cola de embeddings");
+      setIsBackfilling(false);
+      return;
+    }
+
+    setBackfillTotals(queueResult.data.totals);
+
+    const pending = queueResult.data.pending;
+    if (pending.length === 0) {
+      setStatus("No hay símbolos pendientes de backfill.");
+      pushBackfillLog("No hay elementos pendientes. Todo está actualizado.");
+      setIsBackfilling(false);
+      return;
+    }
+
+    setStatus(`Cargando CLIP para procesar ${pending.length} símbolos...`);
+
+    let runtime: ClipRuntime;
+    try {
+      runtime = await loadClipRuntime();
+      pushBackfillLog(`Modelo CLIP cargado: ${runtime.modelId}`);
+    } catch (error) {
+      setStatus("No se pudo cargar CLIP para el backfill");
+      pushBackfillLog(`ERROR cargando CLIP: ${error instanceof Error ? error.message : String(error)}`);
+      setIsBackfilling(false);
+      return;
+    }
+
+    let success = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    for (let index = 0; index < pending.length; index += 1) {
+      const item = pending[index];
+      setBackfillProgress({
+        current: index + 1,
+        total: pending.length,
+        success,
+        failed,
+        skipped,
+        currentSlug: item.slug,
+      });
+
+      pushBackfillLog(`Procesando ${item.slug} (${index + 1}/${pending.length})`);
+
+      try {
+        if (!item.imageUrl) {
+          skipped += 1;
+          pushBackfillLog(`SKIP ${item.slug}: sin imagen.`);
+          continue;
+        }
+
+        const imageResponse = await fetch(item.imageUrl, { cache: "no-store" });
+        if (!imageResponse.ok) {
+          throw new Error(`No se pudo descargar imagen (${imageResponse.status})`);
+        }
+
+        const blob = await imageResponse.blob();
+        const rawImage = await runtime.RawImage.fromBlob(blob);
+        const processed = await runtime.processor(rawImage);
+        const output = await runtime.model(processed);
+        const tensor = output.image_embeds as { data?: Float32Array | number[] } | undefined;
+
+        if (!tensor?.data) {
+          throw new Error("CLIP no devolvió image_embeds");
+        }
+
+        const values = Array.from(tensor.data);
+        if (values.length !== VISION_EMBEDDING_DIMENSIONS) {
+          throw new Error(`Dimensión inesperada ${values.length}. Se esperaba ${VISION_EMBEDDING_DIMENSIONS}`);
+        }
+
+        const normalized = normalizeL2(values);
+        if (!normalized) {
+          throw new Error("No se pudo normalizar el embedding (norma cero)");
+        }
+
+        const saveResult = await fetchJson<{ ok: boolean; skipped: boolean; reason?: string }>("/api/admin/vision-embeddings", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            symbolId: item.symbolId,
+            imageUrl: item.imageUrl,
+            embedding: normalized,
+          }),
+        });
+
+        if (!saveResult.ok) {
+          throw new Error(saveResult.message || "No se pudo guardar el embedding");
+        }
+
+        if (saveResult.data.skipped) {
+          skipped += 1;
+          pushBackfillLog(`SKIP ${item.slug}: ${saveResult.data.reason || "up-to-date"}`);
+        } else {
+          success += 1;
+          pushBackfillLog(`OK ${item.slug}: embedding 512 guardado.`);
+        }
+      } catch (error) {
+        failed += 1;
+        pushBackfillLog(`ERROR ${item.slug}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    const verifyResult = await fetchJson<VisionEmbeddingQueueResponse>("/api/admin/vision-embeddings", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    });
+
+    if (verifyResult.ok) {
+      setBackfillTotals(verifyResult.data.totals);
+      pushBackfillLog(
+        `Verificación: ${verifyResult.data.totals.valid512}/${verifyResult.data.totals.symbolsTotal} símbolos con embedding 512 válido.`
+      );
+    }
+
+    setBackfillProgress({
+      current: pending.length,
+      total: pending.length,
+      success,
+      failed,
+      skipped,
+      currentSlug: "completado",
+    });
+    setStatus(`Backfill finalizado. OK=${success}, SKIP=${skipped}, ERR=${failed}`);
+    await loadData();
+    setIsBackfilling(false);
+  }, [loadClipRuntime, loadData, pushBackfillLog]);
+
   if (authState === "checking") {
     return (
-      <main className="min-h-screen bg-thor-bg text-thor-text admin-grid-bg flex items-center justify-center p-4">
-        <div className="rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
-          <div className="flex items-center gap-3 text-thor-muted">
+      <main className="admin-auth-shell admin-grid-bg">
+        <div className="admin-auth-card admin-auth-loading">
+          <div className="admin-auth-badge">Signipedia CMS</div>
+          <h1>Comprobando sesión</h1>
+          <p>Preparando el entorno editorial y verificando acceso seguro.</p>
+          <div className="admin-auth-progress" role="status" aria-live="polite">
             <Loader2 size={18} className="animate-spin" />
-            <p className="text-sm">Validando sesión de administrador...</p>
+            <span>Validando sesión de administrador...</span>
           </div>
         </div>
       </main>
@@ -498,46 +758,54 @@ export default function AdminPage() {
 
   if (authState === "locked") {
     return (
-      <main className="min-h-screen bg-thor-bg text-thor-text admin-grid-bg flex items-center justify-center p-4">
-        <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="rounded-xl bg-indigo-500/20 p-2 text-indigo-300">
+      <main className="admin-auth-shell admin-grid-bg">
+        <div className="admin-auth-card">
+          <div className="admin-auth-badge">Acceso editorial</div>
+          <div className="admin-auth-head">
+            <div className="admin-auth-icon">
               <Shield size={22} />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Acceso Signipedia</h2>
-              <p className="text-sm text-thor-muted">Introduce la contraseña del panel.</p>
+              <h1>Panel Signipedia</h1>
+              <p>Inicia sesión para gestionar el catálogo, medios y contenido público.</p>
             </div>
           </div>
 
-          <label className="mb-3 block text-sm text-thor-muted">
+          <label className="admin-auth-label">
             Contraseña
-            <input
-              type="password"
-              value={authInput}
-              onChange={(event) => setAuthInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void authenticate();
-                }
-              }}
-              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none ring-0 focus:border-indigo-400"
-              placeholder="••••••••••••"
-            />
+            <div className="admin-auth-input-wrap">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={authInput}
+                onChange={(event) => setAuthInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void authenticate();
+                  }
+                }}
+                className="admin-auth-input"
+                placeholder="Introduce tu contraseña"
+              />
+              <button type="button" className="admin-auth-toggle" onClick={() => setShowPassword((current) => !current)}>
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                <span>{showPassword ? "Ocultar" : "Mostrar"}</span>
+              </button>
+            </div>
           </label>
 
-          {authError ? <p className="mb-3 text-sm text-rose-300">{authError}</p> : null}
+          {authError ? <div className="admin-auth-error">{authError}</div> : null}
 
           <button
             type="button"
             onClick={() => {
               void authenticate();
             }}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-500 px-4 py-2 font-medium text-white transition hover:bg-indigo-400"
+            disabled={isAuthenticating}
+            className="admin-auth-submit"
           >
-            <Lock size={16} />
-            Entrar al panel
+            {isAuthenticating ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}
+            {isAuthenticating ? "Validando acceso..." : "Entrar al panel"}
           </button>
         </div>
       </main>
@@ -545,7 +813,7 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-thor-bg text-thor-text admin-grid-bg">
+    <main className="admin-cms-root admin-grid-bg">
       <input
         ref={imageInputRef}
         type="file"
@@ -558,8 +826,8 @@ export default function AdminPage() {
         }}
       />
 
-      <div className="mx-auto w-full max-w-7xl p-4 md:p-8">
-        <header className="mb-6 rounded-2xl border border-slate-700/70 bg-slate-900/90 p-5 shadow-xl backdrop-blur">
+      <div className="admin-cms-container">
+        <header className="admin-cms-header admin-enter">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="space-y-1">
               <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs uppercase tracking-wider text-cyan-200">
@@ -581,7 +849,7 @@ export default function AdminPage() {
                   void loadData();
                 }}
                 disabled={loading}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700 disabled:opacity-60"
+                className="admin-top-pill admin-top-pill-neutral inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold disabled:opacity-60"
               >
                 <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
                 Actualizar
@@ -591,7 +859,7 @@ export default function AdminPage() {
                 onClick={() => {
                   void logout();
                 }}
-                className="inline-flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200 hover:bg-rose-500/20"
+                className="admin-top-pill admin-top-pill-danger inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold"
               >
                 <Lock size={16} />
                 Cerrar sesión
@@ -600,18 +868,18 @@ export default function AdminPage() {
           </div>
         </header>
 
-        <section className="mb-6 grid gap-4 md:grid-cols-4">
-          <article className="rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-lg">
+        <section className="admin-cms-kpis admin-enter">
+          <article className="admin-card">
             <div className="text-sm text-thor-muted">Símbolos</div>
             <div className="mt-2 text-3xl font-bold">{summary?.symbols ?? 0}</div>
             <div className="mt-2 text-xs text-thor-muted">Seed: {summary?.seededSymbols ?? 0}</div>
           </article>
-          <article className="rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-lg">
+          <article className="admin-card">
             <div className="text-sm text-thor-muted">Categorías</div>
             <div className="mt-2 text-3xl font-bold">{summary?.categories ?? 0}</div>
             <div className="mt-2 text-xs text-thor-muted">Seed: {summary?.seededCategories ?? 0}</div>
           </article>
-          <article className="rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-lg md:col-span-2">
+          <article className="admin-card admin-card-wide">
             <div className="text-sm text-thor-muted">Estado</div>
             <div className="mt-2 flex items-center gap-2 text-sm text-thor-muted">
               {loading ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
@@ -621,114 +889,234 @@ export default function AdminPage() {
           </article>
         </section>
 
-        <section className="mb-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <article className="rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-lg">
+        <section className="admin-cms-main admin-enter">
+          <article className="admin-card admin-form-card">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm text-thor-muted">Símbolos</div>
                 <h2 className="text-lg font-semibold">Crear y editar</h2>
               </div>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={newSymbol} className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700">
+                <button
+                  type="button"
+                  onClick={newSymbol}
+                  className="admin-tool-pill admin-tool-pill-new inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold"
+                >
                   <Plus size={16} />
                   Nuevo
                 </button>
-                <button type="button" onClick={() => imageInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-200 hover:bg-cyan-500/20">
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  className="admin-tool-pill admin-tool-pill-upload inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold"
+                >
                   <ImagePlus size={16} />
                   Subir imagen
                 </button>
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="grid gap-2 text-sm text-thor-muted">
-                Slug
-                <input className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.slug} onChange={(event) => setSymbolForm((current) => ({ ...current, slug: event.target.value }))} />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted">
-                Nombre
-                <input className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.name} onChange={(event) => setSymbolForm((current) => ({ ...current, name: event.target.value }))} />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
-                Símbolo / glyph
-                <input className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.canonicalGlyph} onChange={(event) => setSymbolForm((current) => ({ ...current, canonicalGlyph: event.target.value }))} />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
-                Significado
-                <textarea className="min-h-24 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.meaning} onChange={(event) => setSymbolForm((current) => ({ ...current, meaning: event.target.value }))} />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
-                Historia
-                <textarea className="min-h-24 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.history} onChange={(event) => setSymbolForm((current) => ({ ...current, history: event.target.value }))} />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
-                Origen
-                <textarea className="min-h-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.origin} onChange={(event) => setSymbolForm((current) => ({ ...current, origin: event.target.value }))} />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
-                Usos actuales
-                <textarea className="min-h-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.currentUses} onChange={(event) => setSymbolForm((current) => ({ ...current, currentUses: event.target.value }))} />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
-                Descripción SEO
-                <textarea className="min-h-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.description} onChange={(event) => setSymbolForm((current) => ({ ...current, description: event.target.value }))} />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted">
-                Categoría
-                <select className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.categoryId} onChange={(event) => setSymbolForm((current) => ({ ...current, categoryId: event.target.value }))}>
-                  {categoryOptions.map((category) => (
-                    <option key={category.id} value={category.slug}>{category.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted">
-                Idioma
-                <input className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.language} onChange={(event) => setSymbolForm((current) => ({ ...current, language: event.target.value }))} />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted">
-                Estado
-                <select className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.status} onChange={(event) => setSymbolForm((current) => ({ ...current, status: event.target.value as SymbolFormState["status"] }))}>
-                  <option value="draft">draft</option>
-                  <option value="review">review</option>
-                  <option value="published">published</option>
-                  <option value="archived">archived</option>
-                </select>
-              </label>
-              <label className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-thor-muted md:col-span-2">
-                <input type="checkbox" checked={symbolForm.isFeatured} onChange={(event) => setSymbolForm((current) => ({ ...current, isFeatured: event.target.checked }))} />
-                Destacado editorial
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
-                Alias por línea
-                <textarea className="min-h-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.aliasesText} onChange={(event) => setSymbolForm((current) => ({ ...current, aliasesText: event.target.value }))} placeholder="sigma&#10;sumatoria" />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
-                Etiquetas por línea
-                <textarea className="min-h-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.tagsText} onChange={(event) => setSymbolForm((current) => ({ ...current, tagsText: event.target.value }))} placeholder="matemática&#10;serie" />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
-                Relacionados por slug, uno por línea
-                <textarea className="min-h-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.relatedText} onChange={(event) => setSymbolForm((current) => ({ ...current, relatedText: event.target.value }))} placeholder="infinito&#10;pi" />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
-                Medios / URLs por línea
-                <textarea className="min-h-20 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.mediaLines} onChange={(event) => setSymbolForm((current) => ({ ...current, mediaLines: event.target.value }))} placeholder="/signipedia-media/symbol.png" />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
-                Periodos históricos JSON
-                <textarea className="min-h-24 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.periodsJson} onChange={(event) => setSymbolForm((current) => ({ ...current, periodsJson: event.target.value }))} />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
-                Fuentes JSON
-                <textarea className="min-h-24 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.sourcesJson} onChange={(event) => setSymbolForm((current) => ({ ...current, sourcesJson: event.target.value }))} />
-              </label>
-              <label className="grid gap-2 text-sm text-thor-muted md:col-span-2">
-                Traducciones JSON
-                <textarea className="min-h-24 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-thor-text outline-none focus:border-cyan-400" value={symbolForm.translationsJson} onChange={(event) => setSymbolForm((current) => ({ ...current, translationsJson: event.target.value }))} />
-              </label>
+            <div className="admin-editor-layout">
+              <section className="admin-editor-section">
+                <header className="admin-editor-section-head">
+                  <div className="admin-editor-section-icon">
+                    <PenSquare size={16} />
+                  </div>
+                  <div>
+                    <h3>Información básica</h3>
+                    <p>Identidad principal del símbolo y taxonomía editorial.</p>
+                  </div>
+                </header>
+                <div className="admin-editor-grid">
+                  <label className="admin-field">
+                    <span className="admin-field-label">Slug</span>
+                    <input className="admin-input" value={symbolForm.slug} onChange={(event) => setSymbolForm((current) => ({ ...current, slug: event.target.value }))} placeholder="infinito" />
+                  </label>
+                  <label className="admin-field">
+                    <span className="admin-field-label">Nombre</span>
+                    <input className="admin-input" value={symbolForm.name} onChange={(event) => setSymbolForm((current) => ({ ...current, name: event.target.value }))} placeholder="Infinito" />
+                  </label>
+                  <label className="admin-field">
+                    <span className="admin-field-label">Símbolo / Glyph</span>
+                    <input className="admin-input" value={symbolForm.canonicalGlyph} onChange={(event) => setSymbolForm((current) => ({ ...current, canonicalGlyph: event.target.value }))} placeholder="∞" />
+                  </label>
+                  <label className="admin-field">
+                    <span className="admin-field-label">Categoría</span>
+                    <select className="admin-select" value={symbolForm.categoryId} onChange={(event) => setSymbolForm((current) => ({ ...current, categoryId: event.target.value }))}>
+                      {categoryOptions.map((category) => (
+                        <option key={category.id} value={category.slug}>{category.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="admin-field">
+                    <span className="admin-field-label">Idioma</span>
+                    <input className="admin-input" value={symbolForm.language} onChange={(event) => setSymbolForm((current) => ({ ...current, language: event.target.value }))} placeholder="es" />
+                  </label>
+                  <label className="admin-field">
+                    <span className="admin-field-label">Estado</span>
+                    <select className="admin-select" value={symbolForm.status} onChange={(event) => setSymbolForm((current) => ({ ...current, status: event.target.value as SymbolFormState["status"] }))}>
+                      <option value="draft">draft</option>
+                      <option value="review">review</option>
+                      <option value="published">published</option>
+                      <option value="archived">archived</option>
+                    </select>
+                  </label>
+                  <label className="admin-feature-toggle admin-field-span-2">
+                    <input type="checkbox" checked={symbolForm.isFeatured} onChange={(event) => setSymbolForm((current) => ({ ...current, isFeatured: event.target.checked }))} />
+                    <div>
+                      <strong>Destacado editorial</strong>
+                      <small>Aparecerá priorizado en listados y recomendaciones.</small>
+                    </div>
+                  </label>
+                </div>
+              </section>
+
+              <section className="admin-editor-section">
+                <header className="admin-editor-section-head">
+                  <div className="admin-editor-section-icon">
+                    <FileText size={16} />
+                  </div>
+                  <div>
+                    <h3>Contenido</h3>
+                    <p>Texto principal de la ficha pública.</p>
+                  </div>
+                </header>
+                <div className="admin-editor-grid">
+                  <label className="admin-field admin-field-span-2">
+                    <span className="admin-field-label">Significado</span>
+                    <textarea className="admin-textarea admin-textarea-lg" value={symbolForm.meaning} onChange={(event) => setSymbolForm((current) => ({ ...current, meaning: event.target.value }))} placeholder="Define el significado principal del símbolo..." />
+                  </label>
+                  <label className="admin-field admin-field-span-2">
+                    <span className="admin-field-label">Historia</span>
+                    <textarea className="admin-textarea admin-textarea-lg" value={symbolForm.history} onChange={(event) => setSymbolForm((current) => ({ ...current, history: event.target.value }))} placeholder="Contexto histórico y evolución..." />
+                  </label>
+                  <label className="admin-field admin-field-span-2">
+                    <span className="admin-field-label">Origen</span>
+                    <textarea className="admin-textarea" value={symbolForm.origin} onChange={(event) => setSymbolForm((current) => ({ ...current, origin: event.target.value }))} placeholder="Origen cultural, geográfico o técnico..." />
+                  </label>
+                  <label className="admin-field admin-field-span-2">
+                    <span className="admin-field-label">Usos actuales</span>
+                    <textarea className="admin-textarea" value={symbolForm.currentUses} onChange={(event) => setSymbolForm((current) => ({ ...current, currentUses: event.target.value }))} placeholder="Aplicaciones modernas y contextos de uso..." />
+                  </label>
+                </div>
+              </section>
+
+              <section className="admin-editor-section">
+                <header className="admin-editor-section-head">
+                  <div className="admin-editor-section-icon">
+                    <Sparkles size={16} />
+                  </div>
+                  <div>
+                    <h3>Variantes y curiosidades</h3>
+                    <p>Listas enriquecidas para completar la narrativa de la ficha.</p>
+                  </div>
+                </header>
+                <div className="admin-editor-grid">
+                  <label className="admin-field">
+                    <span className="admin-field-label">Variantes (una por línea)</span>
+                    <textarea className="admin-textarea" value={symbolForm.variantsText} onChange={(event) => setSymbolForm((current) => ({ ...current, variantsText: event.target.value }))} placeholder="∞ horizontal&#10;infinity loop" />
+                  </label>
+                  <label className="admin-field">
+                    <span className="admin-field-label">Curiosidades (una por línea)</span>
+                    <textarea className="admin-textarea" value={symbolForm.curiositiesText} onChange={(event) => setSymbolForm((current) => ({ ...current, curiositiesText: event.target.value }))} placeholder="Usado en joyería moderna&#10;Popular en tatuajes minimalistas" />
+                  </label>
+                </div>
+              </section>
+
+              <section className="admin-editor-section">
+                <header className="admin-editor-section-head">
+                  <div className="admin-editor-section-icon">
+                    <Link2 size={16} />
+                  </div>
+                  <div>
+                    <h3>Relaciones semánticas</h3>
+                    <p>Alias, sinónimos y conexiones con otros símbolos.</p>
+                  </div>
+                </header>
+                <div className="admin-editor-grid">
+                  <label className="admin-field">
+                    <span className="admin-field-label">Alias (uno por línea)</span>
+                    <textarea className="admin-textarea" value={symbolForm.aliasesText} onChange={(event) => setSymbolForm((current) => ({ ...current, aliasesText: event.target.value }))} placeholder="sigma&#10;sumatoria" />
+                  </label>
+                  <label className="admin-field">
+                    <span className="admin-field-label">Sinónimos (uno por línea)</span>
+                    <textarea className="admin-textarea" value={symbolForm.synonymsText} onChange={(event) => setSymbolForm((current) => ({ ...current, synonymsText: event.target.value }))} placeholder="lemniscata&#10;símbolo de infinito" />
+                  </label>
+                  <label className="admin-field">
+                    <span className="admin-field-label">Etiquetas (una por línea)</span>
+                    <textarea className="admin-textarea" value={symbolForm.tagsText} onChange={(event) => setSymbolForm((current) => ({ ...current, tagsText: event.target.value }))} placeholder="matemática&#10;serie" />
+                  </label>
+                  <label className="admin-field">
+                    <span className="admin-field-label">Relacionados por slug (uno por línea)</span>
+                    <textarea className="admin-textarea" value={symbolForm.relatedText} onChange={(event) => setSymbolForm((current) => ({ ...current, relatedText: event.target.value }))} placeholder="infinito&#10;pi" />
+                  </label>
+                </div>
+              </section>
+
+              <section className="admin-editor-section">
+                <header className="admin-editor-section-head">
+                  <div className="admin-editor-section-icon">
+                    <Images size={16} />
+                  </div>
+                  <div>
+                    <h3>Multimedia</h3>
+                    <p>Recursos visuales asociados a la ficha.</p>
+                  </div>
+                </header>
+                <div className="admin-editor-grid">
+                  <label className="admin-field admin-field-span-2">
+                    <span className="admin-field-label">Medios / URLs (una por línea)</span>
+                    <textarea className="admin-textarea" value={symbolForm.mediaLines} onChange={(event) => setSymbolForm((current) => ({ ...current, mediaLines: event.target.value }))} placeholder="/signipedia-media/symbol.png" />
+                  </label>
+                </div>
+              </section>
+
+              <section className="admin-editor-section">
+                <header className="admin-editor-section-head">
+                  <div className="admin-editor-section-icon">
+                    <Globe size={16} />
+                  </div>
+                  <div>
+                    <h3>SEO y difusión</h3>
+                    <p>Metadatos visibles en buscadores y previews.</p>
+                  </div>
+                </header>
+                <div className="admin-editor-grid">
+                  <label className="admin-field admin-field-span-2">
+                    <span className="admin-field-label">Descripción SEO</span>
+                    <textarea className="admin-textarea" value={symbolForm.description} onChange={(event) => setSymbolForm((current) => ({ ...current, description: event.target.value }))} placeholder="Resumen editorial para SEO y redes..." />
+                  </label>
+                </div>
+              </section>
+
+              <section className="admin-editor-section">
+                <header className="admin-editor-section-head">
+                  <div className="admin-editor-section-icon">
+                    <Settings2 size={16} />
+                  </div>
+                  <div>
+                    <h3>Metadatos avanzados</h3>
+                    <p>Campos estructurados para histórico, fuentes y traducciones.</p>
+                  </div>
+                </header>
+                <div className="admin-editor-grid">
+                  <label className="admin-field admin-field-span-2">
+                    <span className="admin-field-label">Períodos históricos (JSON)</span>
+                    <textarea className="admin-textarea admin-textarea-lg" value={symbolForm.periodsJson} onChange={(event) => setSymbolForm((current) => ({ ...current, periodsJson: event.target.value }))} />
+                  </label>
+                  <label className="admin-field admin-field-span-2">
+                    <span className="admin-field-label">Fuentes (JSON)</span>
+                    <textarea className="admin-textarea admin-textarea-lg" value={symbolForm.sourcesJson} onChange={(event) => setSymbolForm((current) => ({ ...current, sourcesJson: event.target.value }))} />
+                  </label>
+                  <label className="admin-field admin-field-span-2">
+                    <span className="admin-field-label">Traducciones (JSON)</span>
+                    <textarea className="admin-textarea admin-textarea-lg" value={symbolForm.translationsJson} onChange={(event) => setSymbolForm((current) => ({ ...current, translationsJson: event.target.value }))} />
+                  </label>
+                </div>
+              </section>
             </div>
 
-            <div className="mt-5 flex flex-wrap gap-2">
+            <div className="admin-form-actions">
               <Button type="button" variant="primary" onClick={() => void saveSymbol()} leftIcon={<Upload size={16} />}>
                 Guardar símbolo
               </Button>
@@ -741,8 +1129,56 @@ export default function AdminPage() {
             </div>
           </article>
 
-          <aside className="grid gap-6">
-            <article className="rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-lg">
+          <aside className="admin-aside-grid">
+            <article className="admin-card">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm text-thor-muted">Embeddings de visión</div>
+                  <h2 className="text-lg font-semibold">Backfill CLIP</h2>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    void generateVisionEmbeddings();
+                  }}
+                  leftIcon={isBackfilling ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                  disabled={isBackfilling}
+                >
+                  {isBackfilling ? "Procesando..." : "Generar embeddings de imágenes"}
+                </Button>
+              </div>
+
+              <div className="grid gap-2 text-sm text-thor-muted">
+                <div>Símbolos: {backfillTotals?.symbolsTotal ?? "-"}</div>
+                <div>Con imagen: {backfillTotals?.withImage ?? "-"}</div>
+                <div>Sin imagen: {backfillTotals?.missingImage ?? "-"}</div>
+                <div>Embeddings 512 válidos: {backfillTotals?.valid512 ?? "-"}</div>
+                <div>Pendientes: {backfillTotals?.pending ?? "-"}</div>
+              </div>
+
+              {backfillProgress ? (
+                <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-thor-muted">
+                  <div>
+                    Progreso: {backfillProgress.current}/{backfillProgress.total}
+                  </div>
+                  <div>
+                    OK: {backfillProgress.success} · SKIP: {backfillProgress.skipped} · ERR: {backfillProgress.failed}
+                  </div>
+                  <div>Actual: {backfillProgress.currentSlug}</div>
+                </div>
+              ) : null}
+
+              {backfillLogs.length > 0 ? (
+                <div className="mt-4 max-h-56 overflow-auto rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-thor-muted">
+                  {backfillLogs.map((line, index) => (
+                    <div key={`${line}-${index}`} className="mb-1">{line}</div>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+
+            <article className="admin-card admin-categories-panel">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm text-thor-muted">Importación</div>
@@ -759,7 +1195,7 @@ export default function AdminPage() {
               />
             </article>
 
-            <article className="rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-lg">
+            <article className="admin-card">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm text-thor-muted">Categorías</div>
@@ -787,7 +1223,7 @@ export default function AdminPage() {
 
               <div className="mt-5 grid gap-2">
                 {categories.map((category) => (
-                  <div key={category.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+                  <div key={category.id} className="admin-category-row flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm">
                     <button
                       type="button"
                       className="text-left"
@@ -802,8 +1238,8 @@ export default function AdminPage() {
                         })
                       }
                     >
-                      <strong className="block text-thor-text">{category.name}</strong>
-                      <span className="text-xs text-thor-muted">{category.slug}</span>
+                      <strong className="admin-category-name block">{category.name}</strong>
+                      <span className="admin-category-meta text-xs">{category.slug}</span>
                     </button>
                     <button type="button" onClick={() => void deleteCategory(category)} className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/20">
                       Eliminar
@@ -815,16 +1251,16 @@ export default function AdminPage() {
           </aside>
         </section>
 
-        <section className="rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-lg">
+        <section className="admin-card admin-enter admin-symbol-search">
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-2 text-sm text-thor-muted">
+            <div className="admin-symbol-search-label inline-flex items-center gap-2 text-sm">
               <Search size={16} />
               Buscar símbolos
             </div>
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              className="ml-auto w-full max-w-lg rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400"
+              className="admin-symbol-search-input ml-auto w-full max-w-lg rounded-xl border px-3 py-2 text-sm outline-none"
               placeholder="Buscar por nombre, alias, etiqueta o descripción..."
             />
           </div>
@@ -835,17 +1271,17 @@ export default function AdminPage() {
                 key={entry.symbol.id}
                 type="button"
                 onClick={() => loadSymbolFromList(entry)}
-                className={`rounded-2xl border p-4 text-left transition hover:bg-slate-800/40 ${selectedSymbolSlug === entry.symbol.slug ? "border-cyan-400 bg-cyan-500/10" : "border-slate-700 bg-slate-950"}`}
+                className={`admin-symbol-card rounded-2xl border p-4 text-left transition ${selectedSymbolSlug === entry.symbol.slug ? "admin-symbol-card-selected" : ""}`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <div className="text-2xl font-semibold">{entry.symbol.canonicalGlyph || "∎"}</div>
-                    <h3 className="mt-2 text-base font-semibold text-thor-text">{entry.symbol.name}</h3>
-                    <p className="mt-1 text-xs text-thor-muted">{entry.symbol.slug}</p>
+                    <div className="admin-symbol-glyph text-2xl font-semibold">{entry.symbol.canonicalGlyph || "∎"}</div>
+                    <h3 className="admin-symbol-name mt-2 text-base font-semibold">{entry.symbol.name}</h3>
+                    <p className="admin-symbol-meta mt-1 text-xs">{entry.symbol.slug}</p>
                   </div>
-                  <span className="rounded-full border border-slate-700 px-2 py-1 text-[11px] uppercase tracking-wider text-thor-muted">{entry.symbol.status}</span>
+                  <span className="admin-symbol-status rounded-full border px-2 py-1 text-[11px] uppercase tracking-wider">{entry.symbol.status}</span>
                 </div>
-                <p className="mt-3 line-clamp-3 text-sm text-thor-muted">{entry.symbol.meaning}</p>
+                <p className="admin-symbol-meaning mt-3 line-clamp-3 text-sm">{entry.symbol.meaning}</p>
               </button>
             ))}
           </div>

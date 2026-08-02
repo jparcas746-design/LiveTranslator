@@ -43,6 +43,7 @@ export async function POST(request: Request) {
     const symbol = await engine.createSymbol(symbolInput);
 
     await engine.setAliases(symbol.id, parseStringArray(body.aliases), symbol.language);
+    await engine.setSynonyms(symbol.id, parseStringArray(body.synonyms), symbol.language);
     await engine.setTags(symbol.id, parseStringArray(body.tags), symbol.language);
     await engine.setRelatedSymbols(symbol.id, parseRelatedInput(body.relatedSymbols));
     await engine.setHistoricalPeriods(symbol.id, parsePeriodsInput(body.historicalPeriods));

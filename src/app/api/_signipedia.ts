@@ -49,6 +49,8 @@ export function parseSymbolInput(body: Record<string, unknown>): SymbolUpsertInp
     history: String(body.history || "").trim(),
     origin: String(body.origin || "").trim(),
     currentUses: String(body.currentUses || body.current_uses || "").trim(),
+    variants: parseStringArray(body.variants),
+    curiosities: parseStringArray(body.curiosities),
     categoryId: String(body.categoryId || body.category_id || "").trim(),
     status: normalizeStatus(body.status),
     isFeatured: Boolean(body.isFeatured ?? body.is_featured),

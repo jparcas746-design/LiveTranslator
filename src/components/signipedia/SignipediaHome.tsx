@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Bookmark, BookOpenText, Search, Sparkles, Star, SunMoon } from "lucide-react";
+import { ArrowRight, Bookmark, BookOpenText, Camera, Search, Settings2, Sparkles, Star, SunMoon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { SymbolRecognitionModal } from "@/components/signipedia/SymbolRecognitionModal";
 import { ToastViewport } from "@/components/ui/ToastViewport";
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/hooks/useToast";
@@ -94,6 +95,7 @@ export function SignipediaHome({ categories, initialResults, featured, stats }: 
   const [remoteResults, setRemoteResults] = useState<SearchHit[]>(initialResults);
   const [remoteTotal, setRemoteTotal] = useState(initialResults.length);
   const [isLoading, setIsLoading] = useState(false);
+  const [recognitionOpen, setRecognitionOpen] = useState(false);
   const { theme, mounted: themeMounted, toggleTheme } = useTheme();
   const { toasts, removeToast, showToast } = useToast();
 
@@ -165,6 +167,27 @@ export function SignipediaHome({ categories, initialResults, featured, stats }: 
     return favorites.map((slug) => lookup.get(slug)).filter(Boolean) as SearchHit["symbol"][];
   }, [currentResults, featured, favorites, initialResults]);
 
+  const recommendations = useMemo(() => {
+    const visibleSlugs = new Set(currentResults.map((hit) => hit.symbol.slug));
+    const deduped = new Map<string, SearchHit>();
+
+    for (const hit of [...featured, ...initialResults]) {
+      if (visibleSlugs.has(hit.symbol.slug)) {
+        continue;
+      }
+
+      if (selectedCategory !== "all" && hit.category?.slug === selectedCategory) {
+        continue;
+      }
+
+      if (!deduped.has(hit.symbol.slug)) {
+        deduped.set(hit.symbol.slug, hit);
+      }
+    }
+
+    return Array.from(deduped.values()).slice(0, 3);
+  }, [currentResults, featured, initialResults, selectedCategory]);
+
   function toggleFavorite(symbolSlug: string, symbolName: string) {
     setFavorites((prev) => {
       if (prev.includes(symbolSlug)) {
@@ -186,6 +209,7 @@ export function SignipediaHome({ categories, initialResults, featured, stats }: 
   return (
     <>
       <ToastViewport toasts={toasts} onDismiss={removeToast} />
+      <SymbolRecognitionModal open={recognitionOpen} onClose={() => setRecognitionOpen(false)} />
 
       <main className="signipedia-shell">
         <section className="signipedia-hero">
@@ -214,6 +238,16 @@ export function SignipediaHome({ categories, initialResults, featured, stats }: 
             </div>
 
             <div className="signipedia-hero-actions">
+              <Button
+                type="button"
+                variant="primary"
+                size="lg"
+                leftIcon={<Camera size={16} />}
+                className="signipedia-recognition-trigger"
+                onClick={() => setRecognitionOpen(true)}
+              >
+                Reconocer símbolo con IA
+              </Button>
               <Button type="button" variant="primary" size="lg" leftIcon={<Sparkles size={16} />} onClick={clearFilters}>
                 Explorar catálogo
               </Button>
@@ -246,9 +280,15 @@ export function SignipediaHome({ categories, initialResults, featured, stats }: 
 
             {spotlight ? (
               <>
-                <div className={`signipedia-glyph signipedia-glyph-${symbolAccent(spotlight.category?.slug)}`}>
-                  {spotlight.symbol.canonicalGlyph}
-                </div>
+                {spotlight.symbol.imageUrl ? (
+                  <div className="signipedia-card-image">
+                    <img src={spotlight.symbol.imageUrl} alt={spotlight.symbol.name} loading="lazy" />
+                  </div>
+                ) : (
+                  <div className={`signipedia-glyph signipedia-glyph-${symbolAccent(spotlight.category?.slug)}`}>
+                    {spotlight.symbol.canonicalGlyph}
+                  </div>
+                )}
                 <h2>{spotlight.symbol.name}</h2>
                 <p>{spotlight.symbol.meaning}</p>
                 <div className="signipedia-inline-meta">
@@ -283,8 +323,8 @@ export function SignipediaHome({ categories, initialResults, featured, stats }: 
                 <button
                   key={category.id}
                   type="button"
-                  className={`signipedia-chip ${selectedCategory === category.id ? "is-active" : ""}`}
-                  onClick={() => setSelectedCategory(category.id)}
+                  className={`signipedia-chip ${selectedCategory === category.slug ? "is-active" : ""}`}
+                  onClick={() => setSelectedCategory(category.slug)}
                 >
                   {category.name}
                 </button>
@@ -335,7 +375,7 @@ export function SignipediaHome({ categories, initialResults, featured, stats }: 
                       </button>
                     </div>
                     <div className={`signipedia-card-glyph signipedia-glyph-${symbolAccent(hit.category?.slug)}`}>
-                      {hit.symbol.canonicalGlyph}
+                      {hit.symbol.imageUrl ? <img src={hit.symbol.imageUrl} alt={hit.symbol.name} loading="lazy" /> : hit.symbol.canonicalGlyph}
                     </div>
                     <h3>{hit.symbol.name}</h3>
                     <p>{hit.symbol.meaning}</p>
@@ -408,25 +448,46 @@ export function SignipediaHome({ categories, initialResults, featured, stats }: 
           </aside>
         </section>
 
-        <section className="signipedia-feature-strip">
-          {featured.slice(0, 3).map((hit) => (
-            <article key={hit.symbol.slug} className="signipedia-feature-card">
-              <div className="signipedia-card-topline">
-                <span className="signipedia-tag">{hit.category?.name || "General"}</span>
-                <span className="signipedia-mini-note">Sinónimos: {hit.symbol.synonyms.length}</span>
+        {recommendations.length > 0 ? (
+          <section>
+            <div className="signipedia-section-head compact">
+              <div>
+                <span className="signipedia-section-label">Recomendaciones</span>
+                <h2>También te puede interesar</h2>
               </div>
-              <div className={`signipedia-card-glyph signipedia-glyph-${symbolAccent(hit.category?.slug)}`}>
-                {hit.symbol.canonicalGlyph}
-              </div>
-              <h3>{hit.symbol.name}</h3>
-              <p>{hit.symbol.currentUses}</p>
-              <div className="signipedia-inline-meta">
-                <span>{hit.aliases.slice(0, 2).join(" · ")}</span>
-                <span>{hit.symbol.synonyms.slice(0, 2).join(" · ")}</span>
-              </div>
-            </article>
-          ))}
-        </section>
+              {selectedCategory !== "all" ? (
+                <p className="signipedia-muted">Sugerencias fuera de la categoría seleccionada.</p>
+              ) : null}
+            </div>
+
+            <div className="signipedia-feature-strip">
+              {recommendations.map((hit) => (
+                <article key={hit.symbol.slug} className="signipedia-feature-card">
+                  <div className="signipedia-card-topline">
+                    <span className="signipedia-tag">{hit.category?.name || "General"}</span>
+                    <span className="signipedia-mini-note">Sinónimos: {hit.symbol.synonyms.length}</span>
+                  </div>
+                  <div className={`signipedia-card-glyph signipedia-glyph-${symbolAccent(hit.category?.slug)}`}>
+                    {hit.symbol.imageUrl ? <img src={hit.symbol.imageUrl} alt={hit.symbol.name} loading="lazy" /> : hit.symbol.canonicalGlyph}
+                  </div>
+                  <h3>{hit.symbol.name}</h3>
+                  <p>{hit.symbol.currentUses}</p>
+                  <div className="signipedia-inline-meta">
+                    <span>{hit.aliases.slice(0, 2).join(" · ")}</span>
+                    <span>{hit.symbol.synonyms.slice(0, 2).join(" · ")}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <footer className="signipedia-footer-access">
+          <Link href="/admin/login" className="signipedia-admin-entry" aria-label="Acceso a administración">
+            <Settings2 size={15} />
+            <span>Administración</span>
+          </Link>
+        </footer>
       </main>
     </>
   );

@@ -127,6 +127,7 @@ function mapSymbolRow(row: any): SignipediaSymbol {
     isFeatured: Boolean(row.is_featured),
     description: row.description,
     canonicalGlyph: row.canonical_glyph,
+    imageUrl: row.image_url || null,
     language: row.language,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
@@ -354,7 +355,17 @@ type Queryable = Pick<PoolClient, "query">;
 
 async function resolveCategoryId(connection: Queryable, categoryIdOrSlug: string) {
   const result = await connection.query<{ id: string }>(
-    `SELECT id FROM signipedia_categories WHERE id = $1::uuid OR slug = $1 LIMIT 1`,
+    `
+    SELECT id
+    FROM signipedia_categories
+    WHERE slug = $1
+      OR id = CASE
+        WHEN $1 ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+          THEN $1::uuid
+        ELSE NULL
+      END
+    LIMIT 1
+    `,
     [categoryIdOrSlug]
   );
 
@@ -363,7 +374,17 @@ async function resolveCategoryId(connection: Queryable, categoryIdOrSlug: string
 
 async function resolveSymbolId(connection: Queryable, symbolIdOrSlug: string) {
   const result = await connection.query<{ id: string }>(
-    `SELECT id FROM signipedia_symbols WHERE id = $1::uuid OR slug = $1 LIMIT 1`,
+    `
+    SELECT id
+    FROM signipedia_symbols
+    WHERE slug = $1
+      OR id = CASE
+        WHEN $1 ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+          THEN $1::uuid
+        ELSE NULL
+      END
+    LIMIT 1
+    `,
     [symbolIdOrSlug]
   );
 
@@ -373,7 +394,7 @@ async function resolveSymbolId(connection: Queryable, symbolIdOrSlug: string) {
 async function fetchSymbolBySlug(client: Queryable, slug: string) {
   const result = await client.query(
     `
-    SELECT s.*, c.id AS category_row_id, c.slug AS category_slug, c.name AS category_name, c.description AS category_description, c.icon AS category_icon, c.parent_id AS category_parent_id, c.order_index AS category_order_index, c.created_at AS category_created_at, c.updated_at AS category_updated_at,
+    SELECT s.*, first_image.url AS image_url, c.id AS category_row_id, c.slug AS category_slug, c.name AS category_name, c.description AS category_description, c.icon AS category_icon, c.parent_id AS category_parent_id, c.order_index AS category_order_index, c.created_at AS category_created_at, c.updated_at AS category_updated_at,
       COALESCE(array_agg(DISTINCT a.alias) FILTER (WHERE a.alias IS NOT NULL), ARRAY[]::text[]) AS aliases,
       COALESCE(array_agg(DISTINCT syn.synonym) FILTER (WHERE syn.synonym IS NOT NULL), ARRAY[]::text[]) AS synonyms,
       COALESCE(array_agg(DISTINCT t.tag) FILTER (WHERE t.tag IS NOT NULL), ARRAY[]::text[]) AS tags
@@ -382,8 +403,15 @@ async function fetchSymbolBySlug(client: Queryable, slug: string) {
     LEFT JOIN signipedia_symbol_aliases a ON a.symbol_id = s.id
     LEFT JOIN signipedia_symbol_synonyms syn ON syn.symbol_id = s.id
     LEFT JOIN signipedia_symbol_tags t ON t.symbol_id = s.id
+    LEFT JOIN LATERAL (
+      SELECT m.url
+      FROM signipedia_media m
+      WHERE m.symbol_id = s.id AND m.kind = 'image'
+      ORDER BY m.sort_order ASC, m.created_at ASC
+      LIMIT 1
+    ) first_image ON TRUE
     WHERE s.slug = $1
-    GROUP BY s.id, c.id
+    GROUP BY s.id, c.id, first_image.url
     `,
     [slug]
   );
@@ -516,6 +544,7 @@ export const postgresSignipediaRepository: SignipediaRepository = {
       )
       SELECT
         s.*,
+        first_image.url AS image_url,
         c.id AS category_row_id,
         c.slug AS category_slug,
         c.name AS category_name,
@@ -543,6 +572,13 @@ export const postgresSignipediaRepository: SignipediaRepository = {
       LEFT JOIN alias_agg a ON a.symbol_id = s.id
       LEFT JOIN synonym_agg syn ON syn.symbol_id = s.id
       LEFT JOIN tag_agg t ON t.symbol_id = s.id
+      LEFT JOIN LATERAL (
+        SELECT m.url
+        FROM signipedia_media m
+        WHERE m.symbol_id = s.id AND m.kind = 'image'
+        ORDER BY m.sort_order ASC, m.created_at ASC
+        LIMIT 1
+      ) first_image ON TRUE
       WHERE ($2::text IS NULL OR c.slug = $2::text)
         AND ($3::text IS NULL OR EXISTS (SELECT 1 FROM signipedia_symbol_tags st WHERE st.symbol_id = s.id AND lower(st.tag) = lower($3::text)))
         AND ($4::text IS NULL OR s.language = $4::text)
@@ -623,6 +659,7 @@ export const postgresSignipediaRepository: SignipediaRepository = {
       `
       SELECT
         s.*,
+        first_image.url AS image_url,
         c.id AS category_row_id,
         c.slug AS category_slug,
         c.name AS category_name,
@@ -657,6 +694,13 @@ export const postgresSignipediaRepository: SignipediaRepository = {
         FROM signipedia_symbol_tags
         GROUP BY symbol_id
       ) t ON t.symbol_id = s.id
+      LEFT JOIN LATERAL (
+        SELECT m.url
+        FROM signipedia_media m
+        WHERE m.symbol_id = s.id AND m.kind = 'image'
+        ORDER BY m.sort_order ASC, m.created_at ASC
+        LIMIT 1
+      ) first_image ON TRUE
       LEFT JOIN LATERAL (
         SELECT json_agg(json_build_object('id', rs.id, 'symbol_id', rs.symbol_id, 'related_symbol_id', rs.related_symbol_id, 'relation_type', rs.relation_type)) AS related_symbols
         FROM signipedia_related_symbols rs
@@ -711,8 +755,8 @@ export const postgresSignipediaRepository: SignipediaRepository = {
     const result = await connection.query(
       `
       INSERT INTO signipedia_symbols
-        (slug, name, meaning, history, origin, current_uses, description, canonical_glyph, language, category_id, status, is_featured)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        (slug, name, meaning, history, origin, current_uses, description, canonical_glyph, variants, curiosities, language, category_id, status, is_featured)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12, $13, $14)
       RETURNING *
       `,
       [
@@ -724,6 +768,8 @@ export const postgresSignipediaRepository: SignipediaRepository = {
         input.currentUses,
         input.description || input.meaning,
         input.canonicalGlyph || "",
+        JSON.stringify(input.variants || []),
+        JSON.stringify(input.curiosities || []),
         input.language || "es",
         categoryId,
         input.status || "draft",
@@ -760,10 +806,12 @@ export const postgresSignipediaRepository: SignipediaRepository = {
           current_uses = $7,
           description = $8,
           canonical_glyph = $9,
-          language = $10,
-          category_id = $11,
-          status = $12,
-          is_featured = $13,
+            variants = $10::jsonb,
+            curiosities = $11::jsonb,
+            language = $12,
+            category_id = $13,
+            status = $14,
+            is_featured = $15,
           updated_at = NOW()
       WHERE id = $1
       RETURNING *
@@ -778,6 +826,8 @@ export const postgresSignipediaRepository: SignipediaRepository = {
         input.currentUses || existing.currentUses,
         input.description || existing.description,
         input.canonicalGlyph || existing.canonicalGlyph,
+        JSON.stringify(input.variants ?? existing.variants),
+        JSON.stringify(input.curiosities ?? existing.curiosities),
         input.language || existing.language,
         requestedCategoryId,
         input.status || existing.status,

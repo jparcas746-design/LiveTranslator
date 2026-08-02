@@ -7,7 +7,16 @@ import {
 } from "@/thor/utils/adminSession";
 
 const ADMIN_SESSION_COOKIE = "thor_admin_session";
-const IS_PROD = process.env.NODE_ENV === "production";
+
+function shouldUseSecureCookie(request: Request) {
+  const url = new URL(request.url);
+  if (url.protocol === "https:") {
+    return true;
+  }
+
+  const forwardedProto = request.headers.get("x-forwarded-proto") || "";
+  return forwardedProto.split(",").some((value) => value.trim() === "https");
+}
 
 function readSessionCookie(request: Request) {
   const cookie = request.headers.get("cookie") || "";
@@ -39,18 +48,33 @@ export async function POST(request: Request) {
   }
 
   const expectedPassword = getAdminPassword();
+  if (!expectedPassword) {
+    return NextResponse.json(
+      { error: "Admin password is not configured. Set ADMIN_PASSWORD in environment variables." },
+      { status: 500 }
+    );
+  }
+
   if (password !== expectedPassword) {
-    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+    return NextResponse.json({ error: "Contraseña incorrecta." }, { status: 401 });
   }
 
   const token = createAdminSession();
+  if (!token) {
+    return NextResponse.json(
+      { error: "Admin session secret is not configured. Set THOR_ADMIN_SESSION_SECRET in environment variables." },
+      { status: 500 }
+    );
+  }
+
   const response = NextResponse.json({ authenticated: true });
+  const secure = shouldUseSecureCookie(request);
   response.cookies.set({
     name: ADMIN_SESSION_COOKIE,
     value: token,
     httpOnly: true,
     sameSite: "lax",
-    secure: IS_PROD,
+    secure,
     path: "/",
     maxAge: 8 * 60 * 60,
   });
@@ -63,12 +87,13 @@ export async function DELETE(request: Request) {
   revokeAdminSession(token);
 
   const response = NextResponse.json({ authenticated: false });
+  const secure = shouldUseSecureCookie(request);
   response.cookies.set({
     name: ADMIN_SESSION_COOKIE,
     value: "",
     httpOnly: true,
     sameSite: "lax",
-    secure: IS_PROD,
+    secure,
     path: "/",
     maxAge: 0,
   });

@@ -28,6 +28,7 @@ export type SignipediaSymbol = {
   isFeatured: boolean;
   description: string;
   canonicalGlyph: string;
+  imageUrl?: string | null;
   language: string;
   createdAt: string;
   updatedAt: string;
@@ -147,6 +148,8 @@ export type SymbolUpsertInput = {
   history: string;
   origin: string;
   currentUses: string;
+  variants?: string[];
+  curiosities?: string[];
   categoryId: string;
   status?: SymbolStatus;
   isFeatured?: boolean;

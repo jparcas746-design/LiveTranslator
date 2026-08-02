@@ -52,8 +52,9 @@ async function resolveSymbol(slug: string) {
   };
 }
 
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const resolved = await resolveSymbol(params.slug);
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const resolved = await resolveSymbol(slug);
 
   if (!resolved) {
     return {
@@ -67,8 +68,9 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   };
 }
 
-export default async function SymbolPage({ params }: { params: { slug: string } }) {
-  const resolved = await resolveSymbol(params.slug);
+export default async function SymbolPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const resolved = await resolveSymbol(slug);
 
   if (!resolved) {
     notFound();
@@ -77,6 +79,7 @@ export default async function SymbolPage({ params }: { params: { slug: string } 
   const { detail, categoryById, relatedSymbols } = resolved;
   const symbol = detail.symbol;
   const category = detail.category || categoryById.get(symbol.categoryId) || null;
+  const primaryImage = symbol.imageUrl || detail.media.find((item) => item.kind === "image")?.url || null;
 
   return (
     <main className="signipedia-detail-shell">
@@ -105,7 +108,13 @@ export default async function SymbolPage({ params }: { params: { slug: string } 
             <span>Uso actual: {symbol.currentUses}</span>
           </div>
         </div>
-        <div className="signipedia-detail-glyph">{symbol.canonicalGlyph}</div>
+        {primaryImage ? (
+          <div className="signipedia-detail-media-preview">
+            <img src={primaryImage} alt={symbol.name} loading="lazy" />
+          </div>
+        ) : (
+          <div className="signipedia-detail-glyph">{symbol.canonicalGlyph}</div>
+        )}
       </article>
 
       <div className="signipedia-detail-grid">
@@ -179,7 +188,14 @@ export default async function SymbolPage({ params }: { params: { slug: string } 
             {detail.media.map((item) => (
               <article key={item.id} className="signipedia-detail-note">
                 <strong>{item.kind}</strong>
-                <p>{item.url}</p>
+                {item.kind === "image" ? (
+                  <div className="signipedia-detail-media-item">
+                    <img src={item.url} alt={item.altText || symbol.name} loading="lazy" />
+                    <p>{item.url}</p>
+                  </div>
+                ) : (
+                  <p>{item.url}</p>
+                )}
               </article>
             ))}
           </div>
