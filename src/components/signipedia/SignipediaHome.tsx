@@ -240,16 +240,33 @@ export function SignipediaHome({ categories, initialResults, featured, stats, ca
       }
     }
 
-    return pool
-      .sort((left, right) => {
-        const bySlug = left.slug.localeCompare(right.slug, "es");
-        if (bySlug !== 0) {
-          return bySlug;
-        }
+    if (pool.length === 0) {
+      return [];
+    }
 
-        return left.text.localeCompare(right.text, "es");
-      })
-      .slice(0, 2);
+    const shuffled = [...pool];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const randomIndex = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
+    }
+
+    const uniqueCuriosities: CuriosityItem[] = [];
+    const seenSlugs = new Set<string>();
+
+    for (const item of shuffled) {
+      if (seenSlugs.has(item.slug)) {
+        continue;
+      }
+
+      seenSlugs.add(item.slug);
+      uniqueCuriosities.push(item);
+
+      if (uniqueCuriosities.length === 2) {
+        break;
+      }
+    }
+
+    return uniqueCuriosities.length > 0 ? uniqueCuriosities : shuffled.slice(0, 2);
   }, [catalogPool]);
 
   const favoriteSymbols = useMemo(() => {
@@ -298,6 +315,11 @@ export function SignipediaHome({ categories, initialResults, featured, stats, ca
     setQuery("");
     setSelectedCategory("all");
     setSortMode("featured");
+  }
+
+  function clearFiltersAndJumpToCatalog() {
+    clearFilters();
+    document.getElementById("signipedia-catalog")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function discoverRandomSymbol() {
@@ -360,7 +382,7 @@ export function SignipediaHome({ categories, initialResults, featured, stats, ca
               >
                 Reconocer símbolo con IA
               </Button>
-              <Button type="button" variant="primary" size="lg" leftIcon={<Sparkles size={16} />} onClick={clearFilters}>
+              <Button type="button" variant="primary" size="lg" leftIcon={<Sparkles size={16} />} onClick={clearFiltersAndJumpToCatalog}>
                 Explorar catálogo
               </Button>
               <Button type="button" variant="secondary" size="lg" leftIcon={<SunMoon size={16} />} onClick={toggleTheme}>
@@ -544,7 +566,7 @@ export function SignipediaHome({ categories, initialResults, featured, stats, ca
           </div>
         </section>
 
-        <section className="signipedia-grid-layout">
+        <section className="signipedia-grid-layout" id="signipedia-catalog">
           <div className="signipedia-main-column">
             <div className="signipedia-section-head">
               <div>

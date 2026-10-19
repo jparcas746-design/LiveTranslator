@@ -12,16 +12,40 @@ export async function GET(request: Request) {
     return denied;
   }
 
-  const engine = getSignipediaEngine();
-  const [categories, symbols, stats] = await Promise.all([engine.listCategories(), engine.listSymbols({ limit: 200 }), engine.getStats()]);
+  try {
+    const engine = getSignipediaEngine();
+    const [categories, symbols, statsResult] = await Promise.all([
+      engine.listCategories(),
+      engine.listSymbols({ limit: 200 }),
+      engine.getStats().catch((error) => {
+        console.warn("ADMIN_STATS_FALLBACK", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      }),
+    ]);
 
-  return NextResponse.json({
-    summary: stats,
-    items: {
-      categories,
-      symbols,
-    },
-  });
+    const stats = statsResult || {
+      symbolCount: symbols.length,
+      categoryCount: categories.length,
+      featuredCount: symbols.filter((entry) => entry.symbol.isFeatured).length,
+      aliasCount: symbols.reduce((sum, entry) => sum + entry.aliases.length, 0),
+      tagCount: symbols.reduce((sum, entry) => sum + entry.tags.length, 0),
+      synonymCount: 0,
+      imageCount: symbols.filter((entry) => Boolean(entry.symbol.imageUrl)).length,
+      visionEmbeddingCount: 0,
+    };
+
+    return NextResponse.json({
+      summary: stats,
+      items: {
+        categories,
+        symbols,
+      },
+    });
+  } catch (error) {
+    return jsonError("Unable to load admin catalog", 500, error instanceof Error ? error.message : String(error));
+  }
 }
 
 export async function POST(request: Request) {
